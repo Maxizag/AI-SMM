@@ -1,0 +1,230 @@
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, text
+from uuid import UUID
+from typing import List
+
+from config import get_settings
+from database import get_db, engine
+from models import User, Source, StyleProfile
+from schemas import (
+    UserCreate, UserResponse,
+    SourceCreate, SourceResponse,
+    StyleProfileCreate, StyleProfileResponse,
+    HealthResponse
+)
+
+settings = get_settings()
+
+app = FastAPI(
+    title="AI-SMM Agency API",
+    description="API for AI-powered SMM content generation",
+    version="0.1.0",
+)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify exact origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/health", response_model=HealthResponse)
+async def health_check(db: AsyncSession = Depends(get_db)):
+    """Health check endpoint"""
+    try:
+        # Test database connection
+        await db.execute(text("SELECT 1"))
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+
+    return HealthResponse(
+        status="ok",
+        service="api",
+        database=db_status
+    )
+
+
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "message": "AI-SMM Agency API",
+        "version": "0.1.0",
+        "docs": "/docs"
+    }
+
+
+# User endpoints
+@app.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def create_user(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
+    """Create a new user"""
+    # Check if user with this tg_user_id already exists
+    result = await db.execute(
+        select(User).where(User.tg_user_id == user_data.tg_user_id)
+    )
+    existing_user = result.scalar_one_or_none()
+
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"User with tg_user_id {user_data.tg_user_id} already exists"
+        )
+
+    user = User(**user_data.model_dump())
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@app.get("/users/{user_id}", response_model=UserResponse)
+async def get_user(user_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Get user by ID"""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with id {user_id} not found"
+        )
+
+    return user
+
+
+@app.get("/users", response_model=List[UserResponse])
+async def list_users(
+    skip: int = 0,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db)
+):
+    """List all users"""
+    result = await db.execute(
+        select(User).offset(skip).limit(limit)
+    )
+    users = result.scalars().all()
+    return users
+
+
+# Source endpoints
+@app.post("/sources", response_model=SourceResponse, status_code=status.HTTP_201_CREATED)
+async def create_source(source_data: SourceCreate, db: AsyncSession = Depends(get_db)):
+    """Create a new source"""
+    # Verify user exists
+    result = await db.execute(select(User).where(User.id == source_data.user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with id {source_data.user_id} not found"
+        )
+
+    source = Source(**source_data.model_dump())
+    db.add(source)
+    await db.commit()
+    await db.refresh(source)
+    return source
+
+
+@app.get("/sources/{source_id}", response_model=SourceResponse)
+async def get_source(source_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Get source by ID"""
+    result = await db.execute(select(Source).where(Source.id == source_id))
+    source = result.scalar_one_or_none()
+
+    if not source:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Source with id {source_id} not found"
+        )
+
+    return source
+
+
+@app.get("/users/{user_id}/sources", response_model=List[SourceResponse])
+async def list_user_sources(
+    user_id: UUID,
+    skip: int = 0,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db)
+):
+    """List all sources for a user"""
+    result = await db.execute(
+        select(Source)
+        .where(Source.user_id == user_id)
+        .offset(skip)
+        .limit(limit)
+    )
+    sources = result.scalars().all()
+    return sources
+
+
+# StyleProfile endpoints
+@app.post("/style-profiles", response_model=StyleProfileResponse, status_code=status.HTTP_201_CREATED)
+async def create_style_profile(
+    profile_data: StyleProfileCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new style profile"""
+    # Verify user exists
+    result = await db.execute(select(User).where(User.id == profile_data.user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with id {profile_data.user_id} not found"
+        )
+
+    profile = StyleProfile(**profile_data.model_dump())
+    db.add(profile)
+    await db.commit()
+    await db.refresh(profile)
+    return profile
+
+
+@app.get("/style-profiles/{profile_id}", response_model=StyleProfileResponse)
+async def get_style_profile(profile_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Get style profile by ID"""
+    result = await db.execute(
+        select(StyleProfile).where(StyleProfile.id == profile_id)
+    )
+    profile = result.scalar_one_or_none()
+
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"StyleProfile with id {profile_id} not found"
+        )
+
+    return profile
+
+
+@app.get("/users/{user_id}/style-profiles", response_model=List[StyleProfileResponse])
+async def list_user_style_profiles(
+    user_id: UUID,
+    skip: int = 0,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db)
+):
+    """List all style profiles for a user"""
+    result = await db.execute(
+        select(StyleProfile)
+        .where(StyleProfile.user_id == user_id)
+        .offset(skip)
+        .limit(limit)
+    )
+    profiles = result.scalars().all()
+    return profiles
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

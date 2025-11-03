@@ -58,6 +58,94 @@ services:
     networks:
       - aismm-network
 
+  api:
+    build:
+      context: ../api
+      dockerfile: Dockerfile
+    container_name: aismm-api
+    ports:
+      - "8000:8000"
+    environment:
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-aismm}
+      - POSTGRES_USER=${POSTGRES_USER:-aismm}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-devpass}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - JWT_SECRET=${JWT_SECRET:-changeme}
+      - ENV=${ENV:-dev}
+    volumes:
+      - ../api:/app
+      - ../migrations:/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - aismm-network
+
+  workers:
+    build:
+      context: ../workers
+      dockerfile: Dockerfile
+    container_name: aismm-workers
+    environment:
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-aismm}
+      - POSTGRES_USER=${POSTGRES_USER:-aismm}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-devpass}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ENV=${ENV:-dev}
+    volumes:
+      - ../workers:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - aismm-network
+
+  bot:
+    build:
+      context: ../bot
+      dockerfile: Dockerfile
+    container_name: aismm-bot
+    environment:
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-aismm}
+      - POSTGRES_USER=${POSTGRES_USER:-aismm}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-devpass}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ENV=${ENV:-dev}
+    volumes:
+      - ../bot:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - aismm-network
+
 volumes:
   postgres_data:
     driver: local
