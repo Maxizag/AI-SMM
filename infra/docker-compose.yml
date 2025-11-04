@@ -84,7 +84,7 @@ services:
       redis:
         condition: service_healthy
       qdrant:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -113,9 +113,9 @@ services:
       - ../workers:/app
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: service_started
       redis:
-        condition: service_healthy
+        condition: service_started
     restart: unless-stopped
     networks:
       - aismm-network
@@ -138,9 +138,9 @@ services:
       - ../bot:/app
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: service_started
       api:
-        condition: service_healthy
+        condition: service_started
     restart: unless-stopped
     networks:
       - aismm-network
