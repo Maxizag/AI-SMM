@@ -14,6 +14,7 @@ from schemas import (
     StyleProfileCreate, StyleProfileResponse,
     HealthResponse
 )
+from routers import auth
 
 settings = get_settings()
 
@@ -22,6 +23,9 @@ app = FastAPI(
     description="API for AI-powered SMM content generation",
     version="0.1.0",
 )
+
+# Include routers
+app.include_router(auth.router)
 
 # CORS middleware
 app.add_middleware(

@@ -64,3 +64,16 @@ class HealthResponse(BaseModel):
     status: str
     service: str
     database: str
+
+
+# Auth schemas
+class TelegramAuthRequest(BaseModel):
+    tg_user_id: int
+    name: str
+    username: Optional[str] = None
+
+
+class AuthTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
