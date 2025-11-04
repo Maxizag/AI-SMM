@@ -21,4 +21,4 @@ COPY . .
 EXPOSE 8000
 
 # Run migrations and start server
-CMD ["sh", "-c", "cd /migrations && alembic upgrade head && cd /app && uvicorn main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "export PYTHONPATH=/app:$PYTHONPATH && cd /migrations && alembic upgrade head && cd /app && uvicorn main:app --host 0.0.0.0 --port 8000"]
