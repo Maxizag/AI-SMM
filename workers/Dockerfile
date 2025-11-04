@@ -17,4 +17,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Placeholder: will implement Celery workers later
-CMD ["python", "-c", "import time; print('Workers service ready'); time.sleep(infinity)"]
+CMD ["python", "-c", "import time; print('Workers service ready'); \nwhile True:\n    time.sleep(3600)"]

@@ -17,4 +17,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Placeholder: will implement Telegram bot later
-CMD ["python", "-c", "import time; print('Bot service ready'); time.sleep(infinity)"]
+CMD ["python", "-c", "import time; print('Bot service ready'); \nwhile True:\n    time.sleep(3600)"]
