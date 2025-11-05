@@ -62,6 +62,8 @@ services:
       context: ../api
       dockerfile: Dockerfile
     container_name: aismm-api
+    env_file:
+      - ../.env
     ports:
       - "8000:8000"
     environment:
@@ -99,6 +101,8 @@ services:
       context: ../workers
       dockerfile: Dockerfile
     container_name: aismm-workers
+    env_file:
+      - ../.env
     environment:
       - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
       - POSTGRES_PORT=${POSTGRES_PORT:-5432}
@@ -125,6 +129,8 @@ services:
       context: ../bot
       dockerfile: Dockerfile
     container_name: aismm-bot
+    env_file:
+      - ../.env
     environment:
       - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
       - POSTGRES_PORT=${POSTGRES_PORT:-5432}
