@@ -16,5 +16,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Placeholder: will implement Telegram bot later
-CMD ["sh", "-c", "echo 'Bot service ready' && tail -f /dev/null"]
+# Run the bot
+CMD ["python", "main.py"]
