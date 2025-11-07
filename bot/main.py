@@ -158,7 +158,7 @@ async def handle_sources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     """
     text = update.message.text.strip()
 
-    if text.lower() == 'готово':
+    if text.lower() in ['готово', 'готов', 'done', 'готова']:
         sources_count = context.user_data.get('sources_count', 0)
 
         if sources_count < 1:
