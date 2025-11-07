@@ -36,6 +36,14 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan"
     )
+    briefs: Mapped[list["Brief"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+    style_seeds: Mapped[list["StyleSeed"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         return f"<User(id={self.id}, tg_user_id={self.tg_user_id}, name='{self.name}')>"
@@ -55,8 +63,8 @@ class Source(Base):
         nullable=False,
         index=True
     )
-    text: Mapped[str] = mapped_column(Text, nullable=False)
-    platform: Mapped[str] = mapped_column(String(100), nullable=False)
+    platform: Mapped[str] = mapped_column(Text, nullable=True)
+    url: Mapped[str] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
@@ -96,3 +104,65 @@ class StyleProfile(Base):
 
     def __repr__(self):
         return f"<StyleProfile(id={self.id}, user_id={self.user_id})>"
+
+
+class Brief(Base):
+    __tablename__ = "briefs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    goal: Mapped[str] = mapped_column(Text, nullable=True)
+    audience: Mapped[str] = mapped_column(Text, nullable=True)
+    tone: Mapped[str] = mapped_column(Text, nullable=True)
+    topic: Mapped[str] = mapped_column(Text, nullable=True)
+    frequency: Mapped[str] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="briefs")
+
+    def __repr__(self):
+        return f"<Brief(id={self.id}, user_id={self.user_id})>"
+
+
+class StyleSeed(Base):
+    __tablename__ = "style_seed"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    tone: Mapped[str] = mapped_column(Text, nullable=True)
+    goal: Mapped[str] = mapped_column(Text, nullable=True)
+    topic: Mapped[str] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="style_seeds")
+
+    def __repr__(self):
+        return f"<StyleSeed(id={self.id}, user_id={self.user_id})>"

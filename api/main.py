@@ -14,7 +14,7 @@ from schemas import (
     StyleProfileCreate, StyleProfileResponse,
     HealthResponse
 )
-from routers import auth
+from routers import auth, onboarding
 
 settings = get_settings()
 
@@ -26,6 +26,7 @@ app = FastAPI(
 
 # Include routers
 app.include_router(auth.router)
+app.include_router(onboarding.router)
 
 # CORS middleware
 app.add_middleware(
@@ -114,60 +115,6 @@ async def list_users(
     )
     users = result.scalars().all()
     return users
-
-
-# Source endpoints
-@app.post("/sources", response_model=SourceResponse, status_code=status.HTTP_201_CREATED)
-async def create_source(source_data: SourceCreate, db: AsyncSession = Depends(get_db)):
-    """Create a new source"""
-    # Verify user exists
-    result = await db.execute(select(User).where(User.id == source_data.user_id))
-    user = result.scalar_one_or_none()
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User with id {source_data.user_id} not found"
-        )
-
-    source = Source(**source_data.model_dump())
-    db.add(source)
-    await db.commit()
-    await db.refresh(source)
-    return source
-
-
-@app.get("/sources/{source_id}", response_model=SourceResponse)
-async def get_source(source_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Get source by ID"""
-    result = await db.execute(select(Source).where(Source.id == source_id))
-    source = result.scalar_one_or_none()
-
-    if not source:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Source with id {source_id} not found"
-        )
-
-    return source
-
-
-@app.get("/users/{user_id}/sources", response_model=List[SourceResponse])
-async def list_user_sources(
-    user_id: UUID,
-    skip: int = 0,
-    limit: int = 100,
-    db: AsyncSession = Depends(get_db)
-):
-    """List all sources for a user"""
-    result = await db.execute(
-        select(Source)
-        .where(Source.user_id == user_id)
-        .offset(skip)
-        .limit(limit)
-    )
-    sources = result.scalars().all()
-    return sources
 
 
 # StyleProfile endpoints

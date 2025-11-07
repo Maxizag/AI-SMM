@@ -24,8 +24,8 @@ class UserResponse(UserBase):
 
 # Source schemas
 class SourceBase(BaseModel):
-    text: str
-    platform: str
+    platform: Optional[str] = None
+    url: Optional[str] = None
 
 
 class SourceCreate(SourceBase):
@@ -77,3 +77,45 @@ class AuthTokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
+
+
+# Brief schemas
+class BriefBase(BaseModel):
+    goal: Optional[str] = None
+    audience: Optional[str] = None
+    tone: Optional[str] = None
+    topic: Optional[str] = None
+    frequency: Optional[str] = None
+
+
+class BriefCreate(BriefBase):
+    user_id: UUID
+
+
+class BriefResponse(BriefBase):
+    id: UUID
+    user_id: UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# StyleSeed schemas
+class StyleSeedBase(BaseModel):
+    tone: Optional[str] = None
+    goal: Optional[str] = None
+    topic: Optional[str] = None
+
+
+class StyleSeedCreate(StyleSeedBase):
+    user_id: UUID
+
+
+class StyleSeedResponse(StyleSeedBase):
+    id: UUID
+    user_id: UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
