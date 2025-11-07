@@ -111,14 +111,15 @@ async def handle_user_type_choice(update: Update, context: ContextTypes.DEFAULT_
         context.user_data['sources_count'] = 0
 
         message = (
-            "Отлично! 🎉\n"
-            "Пришли ссылки на свои соцсети, где можно посмотреть посты:\n\n"
-            "Примеры:\n"
-            "• Telegram → https://t.me/channel_name\n"
-            "• Instagram → https://instagram.com/username\n"
-            "• VK → https://vk.com/username\n\n"
-            "Отправляй по одной ссылке. Когда закончишь — напиши «готово».\n"
-            "🔒 Если аккаунт закрыт — открой его на время анализа или прикрепи файл с ≥50 постами (текстом или .txt/.docx)."
+            "Отлично! 🎉\n\n"
+            "Для качественной генерации контента мне нужно изучить ваш стиль.\n\n"
+            "📎 Пожалуйста, отправьте ссылки на ваши социальные сети: Instagram, Telegram, VK\n\n"
+            "Примеры:\n\n"
+            "Telegram → https://t.me/channel_name\n\n"
+            "Instagram → https://instagram.com/username\n\n"
+            "VK → https://vk.com/username\n\n"
+            "Отправляйте по одной ссылке. Когда закончите, напишите 'готово'.\n\n"
+            "🔒 Если аккаунт закрыт — откройте на время анализа."
         )
 
         await update.message.reply_text(message, reply_markup=ReplyKeyboardRemove())
@@ -160,10 +161,10 @@ async def handle_sources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if text.lower() == 'готово':
         sources_count = context.user_data.get('sources_count', 0)
 
-        if sources_count < 3:
+        if sources_count < 1:
             await update.message.reply_text(
-                f"Вы добавили только {sources_count} ссылки.\n"
-                f"Пожалуйста, добавьте ещё {3 - sources_count} ссылки для лучшего анализа."
+                "Вы ещё не добавили ни одной ссылки.\n"
+                "Пожалуйста, отправьте хотя бы одну ссылку на ваши соцсети."
             )
             return AWAITING_SOURCES
 
