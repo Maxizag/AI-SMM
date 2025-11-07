@@ -81,13 +81,12 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     # Welcome message with choice buttons
     welcome_message = (
-        f"👋 Привет, {user.first_name}!\n\n"
-        f"Я — ИИ-SMM Агент, ваш помощник в создании контента.\n\n"
-        f"🎯 Я помогу вам:\n"
-        f"• Генерировать посты в вашем стиле\n"
-        f"• Создавать контент-планы\n"
-        f"• Адаптировать тон и формат под вашу аудиторию\n\n"
-        f"Давайте начнём! Выберите подходящий вариант:"
+        f"👋 Привет!\n"
+        f"Я — твой ИИ-SMM агент. Помогу тебе:\n"
+        f"• писать посты в твоём стиле,\n"
+        f"• создавать визуалы и контент-планы,\n"
+        f"• вовлекать аудиторию и продавать.\n\n"
+        f"Выбери, что тебе ближе:"
     )
 
     # Keyboard with two choice buttons
@@ -112,14 +111,14 @@ async def handle_user_type_choice(update: Update, context: ContextTypes.DEFAULT_
         context.user_data['sources_count'] = 0
 
         message = (
-            "Отлично! 🎉\n\n"
-            "Для качественной генерации контента мне нужно изучить ваш стиль.\n\n"
-            "📎 Пожалуйста, отправьте ссылки на ваши социальные сети (от 3 до 5 ссылок):\n"
-            "• Instagram, Telegram, VK, Twitter и т.д.\n\n"
+            "Отлично! 🎉\n"
+            "Пришли ссылки на свои соцсети, где можно посмотреть посты:\n\n"
             "Примеры:\n"
-            "• https://instagram.com/username\n"
-            "• https://t.me/channel_name\n\n"
-            "Отправляйте по одной ссылке. Когда закончите, напишите 'готово'."
+            "• Telegram → https://t.me/channel_name\n"
+            "• Instagram → https://instagram.com/username\n"
+            "• VK → https://vk.com/username\n\n"
+            "Отправляй по одной ссылке. Когда закончишь — напиши «готово».\n"
+            "🔒 Если аккаунт закрыт — открой его на время анализа или прикрепи файл с ≥50 постами (текстом или .txt/.docx)."
         )
 
         await update.message.reply_text(message, reply_markup=ReplyKeyboardRemove())
@@ -170,15 +169,14 @@ async def handle_sources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         # Move to brief questions (Step 2)
         message = (
-            f"Отлично! Я сохранил {sources_count} источников. ✅\n\n"
-            f"Теперь несколько вопросов о вашем контенте:\n\n"
-            f"❓ Вопрос 1/5:\n\n"
-            f"Какая цель вашего контента?\n\n"
-            f"Примеры:\n"
-            f"• Увеличить вовлеченность аудитории\n"
-            f"• Привлечь новых клиентов\n"
-            f"• Образовательный контент\n"
-            f"• Продвижение личного бренда"
+            "Чтобы писать посты максимально точно под твои цели, ответь на пару вопросов 👇\n\n"
+            "Вопрос 1️⃣ — Цель контента\n\n"
+            "Что ты хочешь от своих соцсетей?\n"
+            "💡 Привлекать клиентов\n"
+            "🧠 Строить личный бренд\n"
+            "📚 Делиться знаниями\n"
+            "❤️ Вдохновлять людей\n"
+            "💬 Общаться с аудиторией"
         )
         await update.message.reply_text(message)
         return AWAITING_BRIEF_Q1_GOAL
@@ -243,61 +241,48 @@ async def handle_sources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         if sources_count >= 5:
             # Max reached, move to brief
+            await update.message.reply_text("✅ Аккаунт сохранён!")
+
             message = (
-                f"✅ Аккаунт сохранён! (найдено {posts_count} постов)\n\n"
-                f"Отлично! Я сохранил {sources_count} источников (максимум). ✅\n\n"
-                f"Теперь несколько вопросов о вашем контенте:\n\n"
-                f"❓ Вопрос 1/5:\n\n"
-                f"Какая цель вашего контента?\n\n"
-                f"Примеры:\n"
-                f"• Увеличить вовлеченность аудитории\n"
-                f"• Привлечь новых клиентов\n"
-                f"• Образовательный контент\n"
-                f"• Продвижение личного бренда"
+                "Чтобы писать посты максимально точно под твои цели, ответь на пару вопросов 👇\n\n"
+                "Вопрос 1️⃣ — Цель контента\n\n"
+                "Что ты хочешь от своих соцсетей?\n"
+                "💡 Привлекать клиентов\n"
+                "🧠 Строить личный бренд\n"
+                "📚 Делиться знаниями\n"
+                "❤️ Вдохновлять людей\n"
+                "💬 Общаться с аудиторией"
             )
             await update.message.reply_text(message)
             return AWAITING_BRIEF_Q1_GOAL
 
         await update.message.reply_text(
-            f"✅ Аккаунт сохранён! (найдено {posts_count} постов)\n\n"
-            f"Добавлено источников: {sources_count}/5\n\n"
-            f"Отправьте следующую ссылку или напишите 'готово', если закончили (минимум 3 ссылки)."
+            f"✅ Аккаунт сохранён!"
         )
         return AWAITING_SOURCES
 
     elif status == "CLOSED":
-        message = verification.get('message', "У вас закрытый аккаунт.")
         await update.message.reply_text(
-            f"🔒 {message}\n\n"
-            f"Пожалуйста, отправьте ссылку на открытый аккаунт или сделайте текущий публичным."
+            "🔒 У вас закрытый аккаунт. Откройте временно или прикрепите файл с ≥50 постами."
         )
         return AWAITING_SOURCES
 
     elif status == "LOW_CONTENT":
-        message = verification.get('message', "В этом аккаунте мало контента.")
-        posts_count = verification.get('posts_count', 0)
         await update.message.reply_text(
-            f"📉 {message}\n\n"
-            f"Найдено постов: {posts_count}\n"
-            f"Для качественного анализа нужно минимум 50 постов.\n\n"
-            f"Попробуйте добавить другой аккаунт с большим количеством контента."
+            "⚠️ У аккаунта мало постов. Добавьте другие соцсети или файл — иначе точность анализа снизится (~−15%)."
         )
         return AWAITING_SOURCES
 
     elif status == "DUPLICATE":
-        message = verification.get('message', "Вы уже добавили эту ссылку.")
         await update.message.reply_text(
-            f"🔄 {message}\n\n"
-            f"Пожалуйста, отправьте другую ссылку."
+            "Эта ссылка уже добавлена."
         )
         return AWAITING_SOURCES
 
     elif status == "INVALID_URL":
-        message = verification.get('message', "Неверный формат ссылки.")
         await update.message.reply_text(
-            f"❌ {message}\n\n"
-            f"Пожалуйста, отправьте корректную ссылку в формате:\n"
-            f"https://instagram.com/username"
+            "Не удалось распознать ссылку. Проверьте формат:\n"
+            "https://t.me/... / https://vk.com/... / https://instagram.com/..."
         )
         return AWAITING_SOURCES
 
@@ -313,13 +298,13 @@ async def handle_brief_q1_goal(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data['brief_goal'] = update.message.text.strip()
 
     message = (
-        "❓ Вопрос 2/5:\n\n"
-        "Кто ваша целевая аудитория?\n\n"
-        "Примеры:\n"
-        "• IT-специалисты 25-35 лет\n"
-        "• Предприниматели и владельцы бизнеса\n"
-        "• Молодые родители\n"
-        "• Студенты и начинающие специалисты"
+        "Вопрос 2️⃣ — Целевая аудитория\n\n"
+        "Кому ты обычно пишешь?\n"
+        "👩 Женская\n"
+        "👨 Мужская\n"
+        "👥 Смешанная\n"
+        "👩‍💼 Предприниматели / специалисты\n"
+        "🧘 Люди, ищущие вдохновение"
     )
     await update.message.reply_text(message)
     return AWAITING_BRIEF_Q2_AUDIENCE
@@ -330,13 +315,13 @@ async def handle_brief_q2_audience(update: Update, context: ContextTypes.DEFAULT
     context.user_data['brief_audience'] = update.message.text.strip()
 
     message = (
-        "❓ Вопрос 3/5:\n\n"
-        "Какой тон общения предпочитаете?\n\n"
-        "Примеры:\n"
-        "• Профессиональный, но дружелюбный\n"
-        "• Строгий и деловой\n"
-        "• Casual и неформальный\n"
-        "• Мотивирующий и вдохновляющий"
+        "Вопрос 3️⃣ — Тональность общения\n\n"
+        "Какой стиль тебе ближе?\n"
+        "🎯 Деловой\n"
+        "💬 Дружелюбный\n"
+        "🔥 Энергичный\n"
+        "🧘 Спокойный\n"
+        "😎 Ироничный"
     )
     await update.message.reply_text(message)
     return AWAITING_BRIEF_Q3_TONE
@@ -347,13 +332,9 @@ async def handle_brief_q3_tone(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data['brief_tone'] = update.message.text.strip()
 
     message = (
-        "❓ Вопрос 4/5:\n\n"
-        "Какая основная тема/ниша вашего контента?\n\n"
-        "Примеры:\n"
-        "• Искусственный интеллект и технологии\n"
-        "• Здоровье и фитнес\n"
-        "• Бизнес и предпринимательство\n"
-        "• Образование и саморазвитие"
+        "Вопрос 4️⃣ — Тематика / ниша\n\n"
+        "О чём твой блог или бизнес?\n"
+        "(Например: психология, нутрициология, маркетинг, коучинг, творчество и т.д.)"
     )
     await update.message.reply_text(message)
     return AWAITING_BRIEF_Q4_TOPIC
@@ -364,13 +345,11 @@ async def handle_brief_q4_topic(update: Update, context: ContextTypes.DEFAULT_TY
     context.user_data['brief_topic'] = update.message.text.strip()
 
     message = (
-        "❓ Вопрос 5/5 (последний!):\n\n"
-        "Как часто вы планируете публиковать контент?\n\n"
-        "Примеры:\n"
-        "• Каждый день\n"
-        "• 3 раза в неделю\n"
-        "• 2-3 раза в неделю\n"
-        "• 1 раз в неделю"
+        "Вопрос 5️⃣ — Частота публикаций\n\n"
+        "Как часто хочешь публиковать посты?\n"
+        "🔹 Ежедневно\n"
+        "🔹 3 раза в неделю\n"
+        "🔹 1 раз в неделю"
     )
     await update.message.reply_text(message)
     return AWAITING_BRIEF_Q5_FREQUENCY
@@ -399,8 +378,8 @@ async def handle_brief_q5_frequency(update: Update, context: ContextTypes.DEFAUL
 
     # Show analysis message
     await update.message.reply_text(
-        "✅ Спасибо! Все данные сохранены.\n\n"
-        "Начинаю анализ твоего стиля — это займёт пару минут. 🔥"
+        "🔥 Отлично! Теперь я понимаю, кто твоя аудитория и зачем ты создаёшь контент.\n"
+        "Начинаю анализ твоего стиля — это займёт пару минут."
     )
 
     return ANALYSIS_RUNNING
@@ -463,8 +442,8 @@ async def handle_styleseed_topic(update: Update, context: ContextTypes.DEFAULT_T
 
     # Show analysis message
     await update.message.reply_text(
-        "✅ Спасибо! Все данные сохранены.\n\n"
-        "Начинаю анализ твоего стиля — это займёт пару минут. 🔥"
+        "🔥 Отлично! Теперь я понимаю, кто твоя аудитория и зачем ты создаёшь контент.\n"
+        "Начинаю анализ твоего стиля — это займёт пару минут."
     )
 
     return ANALYSIS_RUNNING
