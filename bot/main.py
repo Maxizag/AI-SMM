@@ -31,16 +31,18 @@ api_client = APIClient(settings.api_base_url)
     AWAITING_USER_TYPE,
     # Branch 1: Experienced users
     AWAITING_SOURCES,
-    AWAITING_BRIEF_GOAL,
-    AWAITING_BRIEF_AUDIENCE,
-    AWAITING_BRIEF_TONE,
-    AWAITING_BRIEF_TOPIC,
-    AWAITING_BRIEF_FREQUENCY,
+    AWAITING_BRIEF_Q1_GOAL,
+    AWAITING_BRIEF_Q2_AUDIENCE,
+    AWAITING_BRIEF_Q3_TONE,
+    AWAITING_BRIEF_Q4_TOPIC,
+    AWAITING_BRIEF_Q5_FREQUENCY,
     # Branch 2: Beginners
     AWAITING_STYLESEED_TONE,
     AWAITING_STYLESEED_GOAL,
     AWAITING_STYLESEED_TOPIC,
-) = range(10)
+    # Analysis
+    ANALYSIS_RUNNING,
+) = range(11)
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -106,7 +108,8 @@ async def handle_user_type_choice(update: Update, context: ContextTypes.DEFAULT_
 
     if choice == "У меня уже есть соцсети":
         # Branch 1: Experienced users
-        context.user_data['sources'] = []
+        context.user_data['verified_sources'] = []
+        context.user_data['sources_count'] = 0
 
         message = (
             "Отлично! 🎉\n\n"
@@ -149,20 +152,23 @@ async def handle_user_type_choice(update: Update, context: ContextTypes.DEFAULT_
 # ========== BRANCH 1: EXPERIENCED USERS ==========
 
 async def handle_sources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Collect social media sources (3-5 links)"""
+    """
+    Step 1: Collect and verify social media sources (3-5 links)
+    Uses POST /sources/verify to check each URL
+    """
     text = update.message.text.strip()
 
     if text.lower() == 'готово':
-        sources_count = len(context.user_data.get('sources', []))
+        sources_count = context.user_data.get('sources_count', 0)
 
         if sources_count < 3:
             await update.message.reply_text(
-                f"Вы отправили только {sources_count} ссылки.\n"
+                f"Вы добавили только {sources_count} ссылки.\n"
                 f"Пожалуйста, добавьте ещё {3 - sources_count} ссылки для лучшего анализа."
             )
             return AWAITING_SOURCES
 
-        # Move to brief questions
+        # Move to brief questions (Step 2)
         message = (
             f"Отлично! Я сохранил {sources_count} источников. ✅\n\n"
             f"Теперь несколько вопросов о вашем контенте:\n\n"
@@ -175,88 +181,135 @@ async def handle_sources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             f"• Продвижение личного бренда"
         )
         await update.message.reply_text(message)
-        return AWAITING_BRIEF_GOAL
+        return AWAITING_BRIEF_Q1_GOAL
 
-    # Validate URL
-    url_pattern = re.compile(
-        r'^https?://'  # http:// or https://
-        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain...
-        r'localhost|'  # localhost...
-        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
-        r'(?::\d+)?'  # optional port
-        r'(?:/?|[/?]\S+)$', re.IGNORECASE)
-
-    if not url_pattern.match(text):
-        await update.message.reply_text(
-            "❌ Это не похоже на корректную ссылку.\n\n"
-            "Пожалуйста, отправьте ссылку в формате:\n"
-            "https://instagram.com/username"
-        )
-        return AWAITING_SOURCES
-
-    # Extract platform from URL
-    platform = "unknown"
-    if "instagram.com" in text or "instagr.am" in text:
-        platform = "instagram"
-    elif "t.me" in text or "telegram.org" in text:
-        platform = "telegram"
-    elif "vk.com" in text:
-        platform = "vk"
-    elif "twitter.com" in text or "x.com" in text:
-        platform = "twitter"
-    elif "facebook.com" in text or "fb.com" in text:
-        platform = "facebook"
-    elif "tiktok.com" in text:
-        platform = "tiktok"
-    elif "youtube.com" in text or "youtu.be" in text:
-        platform = "youtube"
-
-    # Save source via API
-    result = await api_client.create_source(
+    # Verify URL with API
+    verification = await api_client.verify_source(
         user_id=context.user_data['user_id'],
-        platform=platform,
         url=text,
         access_token=context.user_data['access_token']
     )
 
-    if not result:
+    if not verification:
         await update.message.reply_text(
-            "😔 Произошла ошибка при сохранении ссылки. Попробуйте ещё раз."
+            "😔 Произошла ошибка при проверке ссылки. Попробуйте ещё раз."
         )
         return AWAITING_SOURCES
 
-    # Save to context
-    if 'sources' not in context.user_data:
-        context.user_data['sources'] = []
-    context.user_data['sources'].append(result)
+    status = verification.get('status')
 
-    sources_count = len(context.user_data['sources'])
+    # Handle different verification statuses
+    if status == "OK":
+        # Extract platform from URL
+        platform = "unknown"
+        url_lower = text.lower()
+        if "instagram.com" in url_lower or "instagr.am" in url_lower:
+            platform = "instagram"
+        elif "t.me" in url_lower or "telegram.org" in url_lower:
+            platform = "telegram"
+        elif "vk.com" in url_lower:
+            platform = "vk"
+        elif "twitter.com" in url_lower or "x.com" in url_lower:
+            platform = "twitter"
+        elif "facebook.com" in url_lower or "fb.com" in url_lower:
+            platform = "facebook"
+        elif "tiktok.com" in url_lower:
+            platform = "tiktok"
+        elif "youtube.com" in url_lower or "youtu.be" in url_lower:
+            platform = "youtube"
 
-    if sources_count >= 5:
-        # Max reached, move to brief
-        message = (
-            f"Отлично! Я сохранил {sources_count} источников (максимум). ✅\n\n"
-            f"Теперь несколько вопросов о вашем контенте:\n\n"
-            f"❓ Вопрос 1/5:\n\n"
-            f"Какая цель вашего контента?\n\n"
-            f"Примеры:\n"
-            f"• Увеличить вовлеченность аудитории\n"
-            f"• Привлечь новых клиентов\n"
-            f"• Образовательный контент\n"
-            f"• Продвижение личного бренда"
+        # Save source to database
+        result = await api_client.create_source(
+            user_id=context.user_data['user_id'],
+            platform=platform,
+            url=text,
+            access_token=context.user_data['access_token']
         )
-        await update.message.reply_text(message)
-        return AWAITING_BRIEF_GOAL
 
-    await update.message.reply_text(
-        f"✅ Ссылка сохранена ({sources_count}/5)!\n\n"
-        f"Отправьте следующую ссылку или напишите 'готово', если закончили (минимум 3 ссылки)."
-    )
-    return AWAITING_SOURCES
+        if not result:
+            await update.message.reply_text(
+                "😔 Произошла ошибка при сохранении ссылки. Попробуйте ещё раз."
+            )
+            return AWAITING_SOURCES
+
+        # Track verified sources
+        if 'verified_sources' not in context.user_data:
+            context.user_data['verified_sources'] = []
+        context.user_data['verified_sources'].append(result)
+        context.user_data['sources_count'] = len(context.user_data['verified_sources'])
+
+        sources_count = context.user_data['sources_count']
+        posts_count = verification.get('posts_count', 0)
+
+        if sources_count >= 5:
+            # Max reached, move to brief
+            message = (
+                f"✅ Аккаунт сохранён! (найдено {posts_count} постов)\n\n"
+                f"Отлично! Я сохранил {sources_count} источников (максимум). ✅\n\n"
+                f"Теперь несколько вопросов о вашем контенте:\n\n"
+                f"❓ Вопрос 1/5:\n\n"
+                f"Какая цель вашего контента?\n\n"
+                f"Примеры:\n"
+                f"• Увеличить вовлеченность аудитории\n"
+                f"• Привлечь новых клиентов\n"
+                f"• Образовательный контент\n"
+                f"• Продвижение личного бренда"
+            )
+            await update.message.reply_text(message)
+            return AWAITING_BRIEF_Q1_GOAL
+
+        await update.message.reply_text(
+            f"✅ Аккаунт сохранён! (найдено {posts_count} постов)\n\n"
+            f"Добавлено источников: {sources_count}/5\n\n"
+            f"Отправьте следующую ссылку или напишите 'готово', если закончили (минимум 3 ссылки)."
+        )
+        return AWAITING_SOURCES
+
+    elif status == "CLOSED":
+        message = verification.get('message', "У вас закрытый аккаунт.")
+        await update.message.reply_text(
+            f"🔒 {message}\n\n"
+            f"Пожалуйста, отправьте ссылку на открытый аккаунт или сделайте текущий публичным."
+        )
+        return AWAITING_SOURCES
+
+    elif status == "LOW_CONTENT":
+        message = verification.get('message', "В этом аккаунте мало контента.")
+        posts_count = verification.get('posts_count', 0)
+        await update.message.reply_text(
+            f"📉 {message}\n\n"
+            f"Найдено постов: {posts_count}\n"
+            f"Для качественного анализа нужно минимум 50 постов.\n\n"
+            f"Попробуйте добавить другой аккаунт с большим количеством контента."
+        )
+        return AWAITING_SOURCES
+
+    elif status == "DUPLICATE":
+        message = verification.get('message', "Вы уже добавили эту ссылку.")
+        await update.message.reply_text(
+            f"🔄 {message}\n\n"
+            f"Пожалуйста, отправьте другую ссылку."
+        )
+        return AWAITING_SOURCES
+
+    elif status == "INVALID_URL":
+        message = verification.get('message', "Неверный формат ссылки.")
+        await update.message.reply_text(
+            f"❌ {message}\n\n"
+            f"Пожалуйста, отправьте корректную ссылку в формате:\n"
+            f"https://instagram.com/username"
+        )
+        return AWAITING_SOURCES
+
+    else:
+        await update.message.reply_text(
+            "😔 Неизвестный статус проверки. Попробуйте ещё раз."
+        )
+        return AWAITING_SOURCES
 
 
-async def handle_brief_goal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Collect brief: Goal"""
+async def handle_brief_q1_goal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Step 2: Brief Question 1 - Goal"""
     context.user_data['brief_goal'] = update.message.text.strip()
 
     message = (
@@ -269,11 +322,11 @@ async def handle_brief_goal(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         "• Студенты и начинающие специалисты"
     )
     await update.message.reply_text(message)
-    return AWAITING_BRIEF_AUDIENCE
+    return AWAITING_BRIEF_Q2_AUDIENCE
 
 
-async def handle_brief_audience(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Collect brief: Audience"""
+async def handle_brief_q2_audience(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Step 2: Brief Question 2 - Audience"""
     context.user_data['brief_audience'] = update.message.text.strip()
 
     message = (
@@ -286,11 +339,11 @@ async def handle_brief_audience(update: Update, context: ContextTypes.DEFAULT_TY
         "• Мотивирующий и вдохновляющий"
     )
     await update.message.reply_text(message)
-    return AWAITING_BRIEF_TONE
+    return AWAITING_BRIEF_Q3_TONE
 
 
-async def handle_brief_tone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Collect brief: Tone"""
+async def handle_brief_q3_tone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Step 2: Brief Question 3 - Tone"""
     context.user_data['brief_tone'] = update.message.text.strip()
 
     message = (
@@ -303,11 +356,11 @@ async def handle_brief_tone(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         "• Образование и саморазвитие"
     )
     await update.message.reply_text(message)
-    return AWAITING_BRIEF_TOPIC
+    return AWAITING_BRIEF_Q4_TOPIC
 
 
-async def handle_brief_topic(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Collect brief: Topic"""
+async def handle_brief_q4_topic(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Step 2: Brief Question 4 - Topic"""
     context.user_data['brief_topic'] = update.message.text.strip()
 
     message = (
@@ -320,11 +373,11 @@ async def handle_brief_topic(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "• 1 раз в неделю"
     )
     await update.message.reply_text(message)
-    return AWAITING_BRIEF_FREQUENCY
+    return AWAITING_BRIEF_Q5_FREQUENCY
 
 
-async def handle_brief_frequency(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Collect brief: Frequency and save to API"""
+async def handle_brief_q5_frequency(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Step 2: Brief Question 5 - Frequency and save to API"""
     context.user_data['brief_frequency'] = update.message.text.strip()
 
     # Save brief via API
@@ -344,9 +397,13 @@ async def handle_brief_frequency(update: Update, context: ContextTypes.DEFAULT_T
         )
         return ConversationHandler.END
 
-    # Show final screen
-    await show_final_screen(update, context)
-    return ConversationHandler.END
+    # Show analysis message
+    await update.message.reply_text(
+        "✅ Спасибо! Все данные сохранены.\n\n"
+        "Начинаю анализ твоего стиля — это займёт пару минут. 🔥"
+    )
+
+    return ANALYSIS_RUNNING
 
 
 # ========== BRANCH 2: BEGINNERS ==========
@@ -404,51 +461,27 @@ async def handle_styleseed_topic(update: Update, context: ContextTypes.DEFAULT_T
         )
         return ConversationHandler.END
 
-    # Show final screen
-    await show_final_screen(update, context)
-    return ConversationHandler.END
-
-
-# ========== FINAL SCREEN ==========
-
-async def show_final_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show final screen with action buttons"""
-    message = (
-        "🎉 Всё готово!\n\n"
-        "Я изучил ваши предпочтения и готов создавать контент.\n\n"
-        "Что хотите сделать дальше?"
+    # Show analysis message
+    await update.message.reply_text(
+        "✅ Спасибо! Все данные сохранены.\n\n"
+        "Начинаю анализ твоего стиля — это займёт пару минут. 🔥"
     )
 
-    keyboard = [
-        ["📝 Показать демо-посты"],
-        ["📅 Посмотреть контент-план"],
-        ["🎨 Настроить стиль"]
-    ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-    await update.message.reply_text(message, reply_markup=reply_markup)
+    return ANALYSIS_RUNNING
 
 
-async def handle_final_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle actions from final screen"""
-    choice = update.message.text
+# ========== ANALYSIS STATE ==========
 
-    if choice == "📝 Показать демо-посты":
-        await update.message.reply_text(
-            "🚧 Функция генерации демо-постов скоро будет доступна!\n\n"
-            "Я работаю над созданием постов в вашем уникальном стиле."
-        )
-    elif choice == "📅 Посмотреть контент-план":
-        await update.message.reply_text(
-            "🚧 Функция контент-плана в разработке!\n\n"
-            "Скоро вы сможете автоматически генерировать планы публикаций."
-        )
-    elif choice == "🎨 Настроить стиль":
-        await update.message.reply_text(
-            "🚧 Настройка стиля будет доступна в следующей версии!\n\n"
-            "Вы сможете детально настроить параметры генерации контента."
-        )
+async def handle_analysis_running(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle messages during analysis"""
+    await update.message.reply_text(
+        "⏳ Анализ всё ещё выполняется...\n\n"
+        "Пожалуйста, подождите немного. Я уведомлю вас, когда всё будет готово!"
+    )
+    return ANALYSIS_RUNNING
 
+
+# ========== UTILITY HANDLERS ==========
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel conversation"""
@@ -517,20 +550,20 @@ def main() -> None:
             AWAITING_SOURCES: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sources)
             ],
-            AWAITING_BRIEF_GOAL: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_brief_goal)
+            AWAITING_BRIEF_Q1_GOAL: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_brief_q1_goal)
             ],
-            AWAITING_BRIEF_AUDIENCE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_brief_audience)
+            AWAITING_BRIEF_Q2_AUDIENCE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_brief_q2_audience)
             ],
-            AWAITING_BRIEF_TONE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_brief_tone)
+            AWAITING_BRIEF_Q3_TONE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_brief_q3_tone)
             ],
-            AWAITING_BRIEF_TOPIC: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_brief_topic)
+            AWAITING_BRIEF_Q4_TOPIC: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_brief_q4_topic)
             ],
-            AWAITING_BRIEF_FREQUENCY: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_brief_frequency)
+            AWAITING_BRIEF_Q5_FREQUENCY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_brief_q5_frequency)
             ],
             # Branch 2: Beginners
             AWAITING_STYLESEED_TONE: [
@@ -542,6 +575,10 @@ def main() -> None:
             AWAITING_STYLESEED_TOPIC: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_styleseed_topic)
             ],
+            # Analysis
+            ANALYSIS_RUNNING: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_analysis_running)
+            ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
@@ -549,7 +586,6 @@ def main() -> None:
     # Add handlers
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_final_actions))
 
     # Start bot
     logger.info("Bot is running. Press Ctrl+C to stop.")

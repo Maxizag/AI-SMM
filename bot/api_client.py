@@ -47,6 +47,46 @@ class APIClient:
             logger.error(f"Unexpected error during authentication: {e}")
             return None
 
+    async def verify_source(
+        self,
+        user_id: str,
+        url: str,
+        access_token: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Verify a source URL before saving
+
+        Args:
+            user_id: User UUID
+            url: URL to verify
+            access_token: User's JWT token
+
+        Returns:
+            Verification result with status: OK, CLOSED, LOW_CONTENT, DUPLICATE, INVALID_URL
+            or None if failed
+        """
+        try:
+            api_url = f"{self.base_url}/sources/verify"
+            headers = {"Authorization": f"Bearer {access_token}"}
+            payload = {
+                "user_id": user_id,
+                "url": url
+            }
+
+            response = await self.client.post(api_url, json=payload, headers=headers)
+            response.raise_for_status()
+
+            data = response.json()
+            logger.info(f"Source verified: {url}, status: {data['status']}")
+            return data
+
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to verify source: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error verifying source: {e}")
+            return None
+
     async def create_source(
         self,
         user_id: str,
