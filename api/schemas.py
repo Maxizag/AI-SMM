@@ -119,3 +119,15 @@ class StyleSeedResponse(StyleSeedBase):
 
     class Config:
         from_attributes = True
+
+
+# Source verification schemas
+class SourceVerifyRequest(BaseModel):
+    url: str
+    user_id: UUID
+
+
+class SourceVerifyResponse(BaseModel):
+    status: str  # OK, CLOSED, LOW_CONTENT, DUPLICATE, INVALID_URL
+    message: Optional[str] = None
+    posts_count: Optional[int] = None  # For LOW_CONTENT case

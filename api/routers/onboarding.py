@@ -3,16 +3,103 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import UUID
 from typing import List
+import re
 
 from database import get_db
 from models import User, Source, Brief, StyleSeed
 from schemas import (
     SourceCreate, SourceResponse,
+    SourceVerifyRequest, SourceVerifyResponse,
     BriefCreate, BriefResponse,
     StyleSeedCreate, StyleSeedResponse
 )
 
 router = APIRouter(tags=["Onboarding"])
+
+
+# Source verification endpoint (mock for now, real parsing in T6)
+@router.post("/sources/verify", response_model=SourceVerifyResponse)
+async def verify_source(
+    verify_data: SourceVerifyRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Verify a source URL (MOCK implementation for T5)
+
+    This is a mock endpoint that simulates verification.
+    Real parsing logic will be implemented in Task T6.
+
+    Returns one of:
+    - OK: URL is valid and has enough content
+    - CLOSED: Account is closed/private
+    - LOW_CONTENT: Less than 50 posts
+    - DUPLICATE: URL already added by this user
+    - INVALID_URL: URL format is invalid
+
+    For testing different responses, use URLs containing:
+    - "closed" -> returns CLOSED
+    - "low" -> returns LOW_CONTENT
+    - invalid format -> returns INVALID_URL
+    - already exists in DB -> returns DUPLICATE
+    """
+    url = verify_data.url.strip()
+    user_id = verify_data.user_id
+
+    # 1. Validate URL format
+    url_pattern = re.compile(
+        r'^https?://'  # http:// or https://
+        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain
+        r'localhost|'  # localhost
+        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # or IP
+        r'(?::\d+)?'  # optional port
+        r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+
+    if not url_pattern.match(url):
+        return SourceVerifyResponse(
+            status="INVALID_URL",
+            message="URL format is invalid. Please provide a valid URL starting with http:// or https://"
+        )
+
+    # 2. Check for duplicates in database
+    result = await db.execute(
+        select(Source)
+        .where(Source.user_id == user_id)
+        .where(Source.url == url)
+    )
+    existing_source = result.scalar_one_or_none()
+
+    if existing_source:
+        return SourceVerifyResponse(
+            status="DUPLICATE",
+            message="You have already added this source"
+        )
+
+    # 3. MOCK responses based on URL content (for testing)
+    # Real implementation will be in T6
+
+    url_lower = url.lower()
+
+    # Simulate closed account
+    if "closed" in url_lower:
+        return SourceVerifyResponse(
+            status="CLOSED",
+            message="This account appears to be private or closed"
+        )
+
+    # Simulate low content
+    if "low" in url_lower:
+        return SourceVerifyResponse(
+            status="LOW_CONTENT",
+            message="This account has less than 50 posts. Please add an account with more content.",
+            posts_count=25
+        )
+
+    # Default: Success
+    return SourceVerifyResponse(
+        status="OK",
+        message="Source verified successfully",
+        posts_count=150
+    )
 
 
 # Sources endpoints
