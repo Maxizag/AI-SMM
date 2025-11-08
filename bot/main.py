@@ -31,6 +31,7 @@ api_client = APIClient(settings.api_base_url)
     AWAITING_USER_TYPE,
     # Branch 1: Experienced users
     AWAITING_SOURCES,
+    AWAITING_BRIEF_CHOICE,  # Ask if user wants to do briefing now or later
     AWAITING_BRIEF_Q1_GOAL,
     AWAITING_BRIEF_Q2_AUDIENCE,
     AWAITING_BRIEF_Q3_TONE,
@@ -40,9 +41,9 @@ api_client = APIClient(settings.api_base_url)
     AWAITING_STYLESEED_TONE,
     AWAITING_STYLESEED_GOAL,
     AWAITING_STYLESEED_TOPIC,
-    # Analysis
-    ANALYSIS_RUNNING,
-) = range(11)
+    # Post-onboarding
+    MAIN_MENU,
+) = range(12)
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -168,19 +169,26 @@ async def handle_sources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
             return AWAITING_SOURCES
 
-        # Move to brief questions (Step 2)
+        # User finished adding sources - ask about briefing
+        total_posts = context.user_data.get('total_posts', 0)
+        if total_posts < 50:
+            await update.message.reply_text(
+                f"⚠️ Собрано всего {total_posts} постов.\n"
+                f"Рекомендуем добавить больше контента для точного анализа (точность может снизиться на ~15%)."
+            )
+
+        # Ask if user wants to do briefing now
         message = (
-            "Чтобы писать посты максимально точно под твои цели, ответь на пару вопросов 👇\n\n"
-            "Вопрос 1️⃣ — Цель контента\n\n"
-            "Что ты хочешь от своих соцсетей?\n"
-            "💡 Привлекать клиентов\n"
-            "🧠 Строить личный бренд\n"
-            "📚 Делиться знаниями\n"
-            "❤️ Вдохновлять людей\n"
-            "💬 Общаться с аудиторией"
+            "🧠 Хотите пройти брифинг сейчас?\n\n"
+            "Это поможет мне лучше понять ваши цели и создавать более точный контент."
         )
-        await update.message.reply_text(message)
-        return AWAITING_BRIEF_Q1_GOAL
+        keyboard = [
+            ["Да, пройти сейчас"],
+            ["Позже"]
+        ]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+        await update.message.reply_text(message, reply_markup=reply_markup)
+        return AWAITING_BRIEF_CHOICE
 
     # Verify URL with API
     verification = await api_client.verify_source(
@@ -231,36 +239,57 @@ async def handle_sources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
             return AWAITING_SOURCES
 
-        # Track verified sources
-        if 'verified_sources' not in context.user_data:
-            context.user_data['verified_sources'] = []
-        context.user_data['verified_sources'].append(result)
-        context.user_data['sources_count'] = len(context.user_data['verified_sources'])
+        await update.message.reply_text("✅ Аккаунт сохранён!")
 
-        sources_count = context.user_data['sources_count']
-        posts_count = verification.get('posts_count', 0)
+        # Start scraping content from the source
+        await update.message.reply_text("📥 Начинаю сбор контента...")
 
-        if sources_count >= 5:
-            # Max reached, move to brief
-            await update.message.reply_text("✅ Аккаунт сохранён!")
-
-            message = (
-                "Чтобы писать посты максимально точно под твои цели, ответь на пару вопросов 👇\n\n"
-                "Вопрос 1️⃣ — Цель контента\n\n"
-                "Что ты хочешь от своих соцсетей?\n"
-                "💡 Привлекать клиентов\n"
-                "🧠 Строить личный бренд\n"
-                "📚 Делиться знаниями\n"
-                "❤️ Вдохновлять людей\n"
-                "💬 Общаться с аудиторией"
-            )
-            await update.message.reply_text(message)
-            return AWAITING_BRIEF_Q1_GOAL
-
-        await update.message.reply_text(
-            f"✅ Аккаунт сохранён!"
+        scrape_result = await api_client.scrape_source(
+            source_id=result['id'],
+            user_id=context.user_data['user_id'],
+            access_token=context.user_data['access_token']
         )
-        return AWAITING_SOURCES
+
+        if not scrape_result or scrape_result.get('status') == 'ERROR':
+            await update.message.reply_text(
+                "😔 Произошла ошибка при сборе контента. Попробуйте добавить другой аккаунт."
+            )
+            return AWAITING_SOURCES
+
+        posts_collected = scrape_result.get('posts_collected', 0)
+
+        # Check if enough posts collected
+        if posts_collected >= 50:
+            # Track total posts collected
+            if 'total_posts' not in context.user_data:
+                context.user_data['total_posts'] = 0
+            context.user_data['total_posts'] += posts_collected
+
+            await update.message.reply_text(
+                f"✅ Собрано {posts_collected} постов!\n\n"
+                f"Отлично! Этого достаточно для анализа вашего стиля."
+            )
+
+            # Ask if user wants to do briefing now
+            message = (
+                "🧠 Хотите пройти брифинг сейчас?\n\n"
+                "Это поможет мне лучше понять ваши цели и создавать более точный контент."
+            )
+            keyboard = [
+                ["Да, пройти сейчас"],
+                ["Позже"]
+            ]
+            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+            await update.message.reply_text(message, reply_markup=reply_markup)
+            return AWAITING_BRIEF_CHOICE
+        else:
+            # Not enough posts
+            await update.message.reply_text(
+                f"⚠️ Собрано {posts_collected} постов (нужно минимум 50).\n\n"
+                f"Добавьте ещё один аккаунт с большим количеством постов для точного анализа.\n\n"
+                f"Или отправьте 'готово' если хотите продолжить с текущим количеством (точность может снизиться на ~15%)."
+            )
+            return AWAITING_SOURCES
 
     elif status == "CLOSED":
         await update.message.reply_text(
@@ -292,6 +321,42 @@ async def handle_sources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "😔 Неизвестный статус проверки. Попробуйте ещё раз."
         )
         return AWAITING_SOURCES
+
+
+async def handle_brief_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle user's choice about briefing"""
+    choice = update.message.text
+
+    if choice == "Да, пройти сейчас":
+        # Start briefing
+        message = (
+            "Чтобы писать посты максимально точно под твои цели, ответь на пару вопросов 👇\n\n"
+            "Вопрос 1️⃣ — Цель контента\n\n"
+            "Что ты хочешь от своих соцсетей?\n"
+            "💡 Привлекать клиентов\n"
+            "🧠 Строить личный бренд\n"
+            "📚 Делиться знаниями\n"
+            "❤️ Вдохновлять людей\n"
+            "💬 Общаться с аудиторией"
+        )
+        await update.message.reply_text(message, reply_markup=ReplyKeyboardRemove())
+        return AWAITING_BRIEF_Q1_GOAL
+
+    elif choice == "Позже":
+        # Skip briefing for now, go to main menu
+        context.user_data['brief_pending'] = True
+        await update.message.reply_text(
+            "Хорошо! Вы можете пройти брифинг позже из главного меню.\n\n"
+            "Переходим в главное меню...",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return await show_main_menu(update, context)
+
+    else:
+        await update.message.reply_text(
+            "Пожалуйста, выберите один из вариантов, используя кнопки."
+        )
+        return AWAITING_BRIEF_CHOICE
 
 
 async def handle_brief_q1_goal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -377,13 +442,18 @@ async def handle_brief_q5_frequency(update: Update, context: ContextTypes.DEFAUL
         )
         return ConversationHandler.END
 
-    # Show analysis message
+    # Brief/StyleSeed completed
+    context.user_data['brief_pending'] = False
+    context.user_data['onboarding_completed'] = True
+
+    # Show completion message
     await update.message.reply_text(
         "🔥 Отлично! Теперь я понимаю, кто твоя аудитория и зачем ты создаёшь контент.\n"
         "Начинаю анализ твоего стиля — это займёт пару минут."
     )
 
-    return ANALYSIS_RUNNING
+    # Go to main menu
+    return await show_main_menu(update, context)
 
 
 # ========== BRANCH 2: BEGINNERS ==========
@@ -441,24 +511,89 @@ async def handle_styleseed_topic(update: Update, context: ContextTypes.DEFAULT_T
         )
         return ConversationHandler.END
 
-    # Show analysis message
+    # Brief/StyleSeed completed
+    context.user_data['brief_pending'] = False
+    context.user_data['onboarding_completed'] = True
+
+    # Show completion message
     await update.message.reply_text(
         "🔥 Отлично! Теперь я понимаю, кто твоя аудитория и зачем ты создаёшь контент.\n"
         "Начинаю анализ твоего стиля — это займёт пару минут."
     )
 
-    return ANALYSIS_RUNNING
+    # Go to main menu
+    return await show_main_menu(update, context)
 
 
-# ========== ANALYSIS STATE ==========
+# ========== MAIN MENU ==========
 
-async def handle_analysis_running(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle messages during analysis"""
-    await update.message.reply_text(
-        "⏳ Анализ всё ещё выполняется...\n\n"
-        "Пожалуйста, подождите немного. Я уведомлю вас, когда всё будет готово!"
-    )
-    return ANALYSIS_RUNNING
+async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Show main menu with available actions"""
+    message = "📱 Главное меню\n\nВыберите действие:"
+
+    keyboard = []
+
+    # Check if briefing is pending
+    if context.user_data.get('brief_pending', False):
+        keyboard.append(["🧠 Пройти брифинг"])
+
+    # Main menu options
+    keyboard.append(["📝 Создать пост"])
+    keyboard.append(["📅 Контент-план"])
+    keyboard.append(["🎨 Настроить стиль"])
+    keyboard.append(["ℹ️ Помощь"])
+
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    await update.message.reply_text(message, reply_markup=reply_markup)
+    return MAIN_MENU
+
+
+async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle main menu choices"""
+    choice = update.message.text
+
+    if choice == "🧠 Пройти брифинг":
+        # Start briefing
+        message = (
+            "Чтобы писать посты максимально точно под твои цели, ответь на пару вопросов 👇\n\n"
+            "Вопрос 1️⃣ — Цель контента\n\n"
+            "Что ты хочешь от своих соцсетей?\n"
+            "💡 Привлекать клиентов\n"
+            "🧠 Строить личный бренд\n"
+            "📚 Делиться знаниями\n"
+            "❤️ Вдохновлять людей\n"
+            "💬 Общаться с аудиторией"
+        )
+        await update.message.reply_text(message, reply_markup=ReplyKeyboardRemove())
+        return AWAITING_BRIEF_Q1_GOAL
+
+    elif choice == "📝 Создать пост":
+        await update.message.reply_text(
+            "🚧 Функция создания постов скоро будет доступна!"
+        )
+        return MAIN_MENU
+
+    elif choice == "📅 Контент-план":
+        await update.message.reply_text(
+            "🚧 Функция контент-плана в разработке!"
+        )
+        return MAIN_MENU
+
+    elif choice == "🎨 Настроить стиль":
+        await update.message.reply_text(
+            "🚧 Настройка стиля будет доступна в следующей версии!"
+        )
+        return MAIN_MENU
+
+    elif choice == "ℹ️ Помощь":
+        await help_command(update, context)
+        return MAIN_MENU
+
+    else:
+        await update.message.reply_text(
+            "Пожалуйста, выберите один из вариантов меню."
+        )
+        return MAIN_MENU
 
 
 # ========== UTILITY HANDLERS ==========
@@ -530,6 +665,9 @@ def main() -> None:
             AWAITING_SOURCES: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sources)
             ],
+            AWAITING_BRIEF_CHOICE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_brief_choice)
+            ],
             AWAITING_BRIEF_Q1_GOAL: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_brief_q1_goal)
             ],
@@ -555,9 +693,9 @@ def main() -> None:
             AWAITING_STYLESEED_TOPIC: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_styleseed_topic)
             ],
-            # Analysis
-            ANALYSIS_RUNNING: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_analysis_running)
+            # Main menu
+            MAIN_MENU: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_main_menu)
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],

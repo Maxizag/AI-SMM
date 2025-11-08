@@ -87,6 +87,46 @@ class APIClient:
             logger.error(f"Unexpected error verifying source: {e}")
             return None
 
+    async def scrape_source(
+        self,
+        source_id: str,
+        user_id: str,
+        access_token: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Start scraping posts from a source
+
+        Args:
+            source_id: Source UUID
+            user_id: User UUID
+            access_token: User's JWT token
+
+        Returns:
+            Scrape result with status: SUCCESS, IN_PROGRESS, ERROR
+            or None if failed
+        """
+        try:
+            api_url = f"{self.base_url}/ingest/scrape"
+            headers = {"Authorization": f"Bearer {access_token}"}
+            payload = {
+                "source_id": source_id,
+                "user_id": user_id
+            }
+
+            response = await self.client.post(api_url, json=payload, headers=headers)
+            response.raise_for_status()
+
+            data = response.json()
+            logger.info(f"Scraping completed: {source_id}, posts: {data.get('posts_collected', 0)}")
+            return data
+
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to scrape source: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error scraping source: {e}")
+            return None
+
     async def create_source(
         self,
         user_id: str,
