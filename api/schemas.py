@@ -131,3 +131,15 @@ class SourceVerifyResponse(BaseModel):
     status: str  # OK, CLOSED, LOW_CONTENT, DUPLICATE, INVALID_URL
     message: Optional[str] = None
     posts_count: Optional[int] = None  # For LOW_CONTENT case
+
+
+# Ingest/scrape schemas
+class ScrapeRequest(BaseModel):
+    source_id: UUID
+    user_id: UUID
+
+
+class ScrapeResponse(BaseModel):
+    status: str  # SUCCESS, IN_PROGRESS, ERROR
+    posts_collected: int
+    message: Optional[str] = None

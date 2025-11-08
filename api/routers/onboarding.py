@@ -10,6 +10,7 @@ from models import User, Source, Brief, StyleSeed
 from schemas import (
     SourceCreate, SourceResponse,
     SourceVerifyRequest, SourceVerifyResponse,
+    ScrapeRequest, ScrapeResponse,
     BriefCreate, BriefResponse,
     StyleSeedCreate, StyleSeedResponse
 )
@@ -99,6 +100,55 @@ async def verify_source(
         status="OK",
         message="Source verified successfully",
         posts_count=150
+    )
+
+
+# Ingest/scrape endpoint (mock for now, real scraping in T6)
+@router.post("/ingest/scrape", response_model=ScrapeResponse)
+async def scrape_source(
+    scrape_data: ScrapeRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Start scraping posts from a source (MOCK implementation)
+
+    This is a mock endpoint that simulates content scraping.
+    Real scraping logic will be implemented in Task T6.
+
+    Returns:
+    - SUCCESS: Scraping completed successfully
+    - IN_PROGRESS: Scraping is still running
+    - ERROR: Scraping failed
+
+    For testing, returns SUCCESS with random post count (50-200).
+    """
+    source_id = scrape_data.source_id
+    user_id = scrape_data.user_id
+
+    # Verify source exists
+    result = await db.execute(
+        select(Source)
+        .where(Source.id == source_id)
+        .where(Source.user_id == user_id)
+    )
+    source = result.scalar_one_or_none()
+
+    if not source:
+        return ScrapeResponse(
+            status="ERROR",
+            posts_collected=0,
+            message="Source not found"
+        )
+
+    # MOCK: Simulate successful scraping with random post count
+    # In real implementation (T6), this will actually scrape the source
+    import random
+    posts_collected = random.randint(50, 200)
+
+    return ScrapeResponse(
+        status="SUCCESS",
+        posts_collected=posts_collected,
+        message=f"Successfully collected {posts_collected} posts from source"
     )
 
 
