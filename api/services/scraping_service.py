@@ -37,34 +37,35 @@ class ScrapingService:
     async def verify_source(
         self,
         url: str,
-        user_id: UUID,
-        platform: Optional[str] = None
+        platform: Optional[str] = None,
+        user_id: Optional[UUID] = None
     ) -> Dict[str, Any]:
         """
         Verify a source URL before saving
 
         Args:
             url: Source URL to verify
-            user_id: User UUID
             platform: Platform name (optional, will auto-detect)
+            user_id: User UUID (optional, for duplicate checking)
 
         Returns:
             Verification result with status and metadata
         """
         try:
-            # Check for duplicates
-            result = await self.db.execute(
-                select(Source)
-                .where(Source.user_id == user_id)
-                .where(Source.url == url)
-            )
-            existing_source = result.scalar_one_or_none()
+            # Check for duplicates only if user_id is provided
+            if user_id:
+                result = await self.db.execute(
+                    select(Source)
+                    .where(Source.user_id == user_id)
+                    .where(Source.url == url)
+                )
+                existing_source = result.scalar_one_or_none()
 
-            if existing_source:
-                return {
-                    "status": "DUPLICATE",
-                    "message": "You have already added this source"
-                }
+                if existing_source:
+                    return {
+                        "status": "DUPLICATE",
+                        "message": "You have already added this source"
+                    }
 
             # Create scraper and verify
             scraper = ScraperFactory.create_scraper(url, platform=platform)
