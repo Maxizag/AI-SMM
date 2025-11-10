@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.models import SecurityScheme, HTTPBearer as HTTPBearerModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from uuid import UUID
@@ -25,6 +26,9 @@ app = FastAPI(
     title="AI-SMM Agency API",
     description="API for AI-powered SMM content generation",
     version="0.1.0",
+    swagger_ui_parameters={
+        "persistAuthorization": True  # Save authorization between page refreshes
+    }
 )
 
 # Include routers

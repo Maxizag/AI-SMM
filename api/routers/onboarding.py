@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import UUID
-from typing import List
+from typing import List, Optional
 import re
 
 from database import get_db
@@ -12,14 +12,40 @@ from schemas import (
     SourceVerifyRequest, SourceVerifyResponse,
     ScrapeRequest, ScrapeResponse,
     BriefCreate, BriefResponse,
-    StyleSeedCreate, StyleSeedResponse
+    StyleSeedCreate, StyleSeedResponse,
+    UserResponse
 )
 from services.scraping_service import ScrapingService
+from auth_utils import get_current_user_id
 
 router = APIRouter(tags=["Onboarding"])
 
 
-# Source verification endpoint (mock for now, real parsing in T6)
+# Protected endpoint to get current user info (demonstrates Bearer auth in Swagger)
+@router.get("/me", response_model=UserResponse)
+async def get_current_user(
+    current_user_id: UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get current authenticated user information
+
+    This endpoint requires Bearer token authentication.
+    Use POST /auth/tg to get a token first.
+    """
+    result = await db.execute(select(User).where(User.id == current_user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    return user
+
+
+# Source verification endpoint
 @router.post("/sources/verify", response_model=SourceVerifyResponse)
 async def verify_source(
     verify_data: SourceVerifyRequest,
