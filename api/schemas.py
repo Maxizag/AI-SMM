@@ -121,25 +121,94 @@ class StyleSeedResponse(StyleSeedBase):
         from_attributes = True
 
 
-# Source verification schemas
+# Source verification schemas (T6 spec)
 class SourceVerifyRequest(BaseModel):
+    platform: str  # telegram|vk|instagram
     url: str
-    user_id: UUID
 
 
 class SourceVerifyResponse(BaseModel):
-    status: str  # OK, CLOSED, LOW_CONTENT, DUPLICATE, INVALID_URL
-    message: Optional[str] = None
-    posts_count: Optional[int] = None  # For LOW_CONTENT case
+    handle: str
+    accessible: bool
+    private: bool
+    post_count: int
+    normalized_url: str
+    message: str
 
 
-# Ingest/scrape schemas
-class ScrapeRequest(BaseModel):
+# Updated Source Create schema (T6 spec)
+class SourceCreateV2(BaseModel):
+    platform: str
+    url: str
+    handle: str
+    private: bool = False
+    post_count_hint: Optional[int] = None
+
+
+class SourceCreateV2Response(BaseModel):
     source_id: UUID
+    status: str  # verified
+
+
+# Ingest/scrape schemas (T6 spec - async with jobs)
+class ScrapeRequest(BaseModel):
     user_id: UUID
+    source_ids: Optional[list[UUID]] = None  # if empty - all verified sources
+    target_posts: int = 100
+    min_posts: int = 50
 
 
 class ScrapeResponse(BaseModel):
-    status: str  # SUCCESS, IN_PROGRESS, ERROR
-    posts_collected: int
-    message: Optional[str] = None
+    job_id: UUID
+    status: str  # queued
+    message: str
+
+
+# Job status schemas
+class SourceProgress(BaseModel):
+    source_id: UUID
+    platform: str
+    collected: int
+    status: str  # queued|running|done|error
+
+
+class JobStatusResponse(BaseModel):
+    job_id: UUID
+    status: str  # queued|running|done|error|partial
+    progress: dict  # {total_collected: int, by_source: [SourceProgress]}
+    errors: list[str] = []
+
+
+# Manual posts schemas
+class ManualPost(BaseModel):
+    platform: str = "manual"
+    text: str
+    posted_at: Optional[datetime] = None
+    media: list[dict] = []
+
+
+class ManualPostsRequest(BaseModel):
+    user_id: UUID
+    posts: list[ManualPost]
+
+
+class ManualPostsResponse(BaseModel):
+    stored: int
+
+
+# Hints/references schemas
+class ReferenceSource(BaseModel):
+    platform: str
+    url: str
+
+
+class HintsRequest(BaseModel):
+    user_id: UUID
+    references: list[ReferenceSource]
+    weight: float = 0.2  # max 0.3
+
+
+class HintsResponse(BaseModel):
+    status: str
+    references_added: int
+    message: str
