@@ -9,8 +9,9 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
-# Add parent directory to path to import our modules
-sys.path.insert(0, str(Path(__file__).parent.parent / "api"))
+# Add API directory to path to import our modules
+# In Docker: migrations is in /migrations, api is in /app
+sys.path.insert(0, "/app")
 
 from config import get_settings
 from database import Base
