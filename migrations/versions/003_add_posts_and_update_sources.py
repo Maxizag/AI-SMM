@@ -21,16 +21,25 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     # Update sources table for content scraping functionality
 
+    # Clean up existing data to match new constraints
+    # Set default platform for NULL or invalid values
+    op.execute("""
+        UPDATE sources
+        SET platform = 'telegram'
+        WHERE platform IS NULL
+           OR platform NOT IN ('telegram', 'vk', 'instagram')
+    """)
+
+    # Make url NOT NULL (set default for existing rows first)
+    op.execute("UPDATE sources SET url = '' WHERE url IS NULL")
+
     # Change platform from Text to String(50) and make NOT NULL
-    # First set default for existing rows, then make NOT NULL
-    op.execute("UPDATE sources SET platform = 'telegram' WHERE platform IS NULL")
     op.alter_column('sources', 'platform',
                     existing_type=sa.Text(),
                     type_=sa.String(length=50),
                     nullable=False)
 
-    # Make url NOT NULL (set default for existing rows first)
-    op.execute("UPDATE sources SET url = '' WHERE url IS NULL")
+    # Change url to NOT NULL
     op.alter_column('sources', 'url',
                     existing_type=sa.Text(),
                     nullable=False)
@@ -43,7 +52,7 @@ def upgrade() -> None:
     op.add_column('sources', sa.Column('meta', postgresql.JSONB(astext_type=sa.Text()), nullable=True))
     op.add_column('sources', sa.Column('updated_at', sa.DateTime(), nullable=False, server_default=sa.func.now()))
 
-    # Add check constraint for platform
+    # Add check constraint for platform AFTER data cleanup
     op.create_check_constraint(
         'check_platform',
         'sources',
