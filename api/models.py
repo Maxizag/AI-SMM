@@ -44,6 +44,9 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan"
     )
+    scraping_jobs: Mapped[list["ScrapingJob"]] = relationship(
+        cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         return f"<User(id={self.id}, tg_user_id={self.tg_user_id}, name='{self.name}')>"
@@ -236,3 +239,64 @@ class Post(Base):
 
     def __repr__(self):
         return f"<Post(id={self.id}, platform='{self.platform}', platform_post_id='{self.platform_post_id}')>"
+
+
+class ScrapingJob(Base):
+    """
+    Асинхронная джоба для скрапинга контента
+
+    Статусы:
+    - queued: джоба создана, ожидает выполнения
+    - running: джоба выполняется
+    - done: джоба успешно завершена
+    - partial: джоба завершена, но собрано меньше target_posts
+    - error: джоба завершена с ошибкой
+    """
+    __tablename__ = "scraping_jobs"
+    __table_args__ = (
+        CheckConstraint("status IN ('queued', 'running', 'done', 'partial', 'error')", name="check_job_status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default='queued',
+        nullable=False
+    )
+    target_posts: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    min_posts: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
+    total_collected: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # JSONB для хранения прогресса по источникам
+    # Формат: {"by_source": [{"source_id": "uuid", "platform": "telegram", "collected": 40, "status": "done"}]}
+    progress: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+
+    # Список ошибок если были
+    errors: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
+    # ID задачи Celery для возможности отмены
+    celery_task_id: Mapped[str] = mapped_column(String(255), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+
+    # Relationships
+    user: Mapped["User"] = relationship()
+
+    def __repr__(self):
+        return f"<ScrapingJob(id={self.id}, status='{self.status}', collected={self.total_collected}/{self.target_posts})>"
