@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "api"))
 
 from config import get_settings
 from database import Base
-from models import User, Source, StyleProfile  # Import all models
+from models import User, Source, StyleProfile, Brief, StyleSeed, Post  # Import all models
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

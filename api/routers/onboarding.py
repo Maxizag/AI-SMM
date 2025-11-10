@@ -14,6 +14,7 @@ from schemas import (
     BriefCreate, BriefResponse,
     StyleSeedCreate, StyleSeedResponse
 )
+from services.scraping_service import ScrapingService
 
 router = APIRouter(tags=["Onboarding"])
 
@@ -25,131 +26,56 @@ async def verify_source(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Verify a source URL (MOCK implementation for T5)
+    Verify a source URL before saving
 
-    This is a mock endpoint that simulates verification.
-    Real parsing logic will be implemented in Task T6.
+    Uses platform-specific scrapers to check:
+    - URL validity
+    - Account accessibility (public/private)
+    - Content availability (≥50 posts recommended)
+    - Duplicate detection
 
     Returns one of:
     - OK: URL is valid and has enough content
     - CLOSED: Account is closed/private
     - LOW_CONTENT: Less than 50 posts
     - DUPLICATE: URL already added by this user
-    - INVALID_URL: URL format is invalid
-
-    For testing different responses, use URLs containing:
-    - "closed" -> returns CLOSED
-    - "low" -> returns LOW_CONTENT
-    - invalid format -> returns INVALID_URL
-    - already exists in DB -> returns DUPLICATE
+    - INVALID_URL: URL format is invalid or unsupported platform
     """
     url = verify_data.url.strip()
     user_id = verify_data.user_id
 
-    # 1. Validate URL format
-    url_pattern = re.compile(
-        r'^https?://'  # http:// or https://
-        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain
-        r'localhost|'  # localhost
-        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # or IP
-        r'(?::\d+)?'  # optional port
-        r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+    # Use scraping service for verification
+    scraping_service = ScrapingService(db)
+    result = await scraping_service.verify_source(url, user_id)
 
-    if not url_pattern.match(url):
-        return SourceVerifyResponse(
-            status="INVALID_URL",
-            message="URL format is invalid. Please provide a valid URL starting with http:// or https://"
-        )
-
-    # 2. Check for duplicates in database
-    result = await db.execute(
-        select(Source)
-        .where(Source.user_id == user_id)
-        .where(Source.url == url)
-    )
-    existing_source = result.scalar_one_or_none()
-
-    if existing_source:
-        return SourceVerifyResponse(
-            status="DUPLICATE",
-            message="You have already added this source"
-        )
-
-    # 3. MOCK responses based on URL content (for testing)
-    # Real implementation will be in T6
-
-    url_lower = url.lower()
-
-    # Simulate closed account
-    if "closed" in url_lower:
-        return SourceVerifyResponse(
-            status="CLOSED",
-            message="This account appears to be private or closed"
-        )
-
-    # Simulate low content
-    if "low" in url_lower:
-        return SourceVerifyResponse(
-            status="LOW_CONTENT",
-            message="This account has less than 50 posts. Please add an account with more content.",
-            posts_count=25
-        )
-
-    # Default: Success
-    return SourceVerifyResponse(
-        status="OK",
-        message="Source verified successfully",
-        posts_count=150
-    )
+    return SourceVerifyResponse(**result)
 
 
-# Ingest/scrape endpoint (mock for now, real scraping in T6)
+# Ingest/scrape endpoint
 @router.post("/ingest/scrape", response_model=ScrapeResponse)
 async def scrape_source(
     scrape_data: ScrapeRequest,
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Start scraping posts from a source (MOCK implementation)
+    Start scraping posts from a source
 
-    This is a mock endpoint that simulates content scraping.
-    Real scraping logic will be implemented in Task T6.
+    Collects posts from the source URL using platform-specific scrapers.
+    Posts are normalized to a unified schema and stored in the database.
 
     Returns:
     - SUCCESS: Scraping completed successfully
-    - IN_PROGRESS: Scraping is still running
+    - IN_PROGRESS: Scraping is still running (for async implementations)
     - ERROR: Scraping failed
-
-    For testing, returns SUCCESS with random post count (50-200).
     """
     source_id = scrape_data.source_id
     user_id = scrape_data.user_id
 
-    # Verify source exists
-    result = await db.execute(
-        select(Source)
-        .where(Source.id == source_id)
-        .where(Source.user_id == user_id)
-    )
-    source = result.scalar_one_or_none()
+    # Use scraping service
+    scraping_service = ScrapingService(db)
+    result = await scraping_service.scrape_source(source_id, user_id, limit=100)
 
-    if not source:
-        return ScrapeResponse(
-            status="ERROR",
-            posts_collected=0,
-            message="Source not found"
-        )
-
-    # MOCK: Simulate successful scraping with random post count
-    # In real implementation (T6), this will actually scrape the source
-    import random
-    posts_collected = random.randint(50, 200)
-
-    return ScrapeResponse(
-        status="SUCCESS",
-        posts_collected=posts_collected,
-        message=f"Successfully collected {posts_collected} posts from source"
-    )
+    return ScrapeResponse(**result)
 
 
 # Sources endpoints

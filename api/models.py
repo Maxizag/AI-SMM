@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import BigInteger, String, Text, DateTime, ForeignKey, JSON
+from sqlalchemy import BigInteger, String, Text, DateTime, ForeignKey, JSON, Boolean, Integer, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from database import Base
@@ -51,6 +51,9 @@ class User(Base):
 
 class Source(Base):
     __tablename__ = "sources"
+    __table_args__ = (
+        CheckConstraint("platform IN ('telegram', 'vk', 'instagram')", name="check_platform"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -63,19 +66,38 @@ class Source(Base):
         nullable=False,
         index=True
     )
-    platform: Mapped[str] = mapped_column(Text, nullable=True)
-    url: Mapped[str] = mapped_column(Text, nullable=True)
+    platform: Mapped[str] = mapped_column(String(50), nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    handle: Mapped[str] = mapped_column(Text, nullable=True)  # @channel, vk.com/club123, instagram handle
+    is_private: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    post_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default='new',
+        nullable=False
+    )  # new|verified|scraping|done|error
+    meta: Mapped[dict] = mapped_column(JSONB, nullable=True, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
         nullable=False
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False
+    )
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="sources")
+    posts: Mapped[list["Post"]] = relationship(
+        back_populates="source",
+        cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
-        return f"<Source(id={self.id}, platform='{self.platform}', user_id={self.user_id})>"
+        return f"<Source(id={self.id}, platform='{self.platform}', status='{self.status}')>"
 
 
 class StyleProfile(Base):
@@ -166,3 +188,51 @@ class StyleSeed(Base):
 
     def __repr__(self):
         return f"<StyleSeed(id={self.id}, user_id={self.user_id})>"
+
+
+class Post(Base):
+    __tablename__ = "posts"
+    __table_args__ = (
+        CheckConstraint("platform IN ('telegram', 'vk', 'instagram')", name="check_post_platform"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("sources.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    platform: Mapped[str] = mapped_column(String(50), nullable=False)
+    platform_post_id: Mapped[str] = mapped_column(Text, nullable=False)  # message_id / post_id / shortcode
+    author_handle: Mapped[str] = mapped_column(Text, nullable=True)
+    posted_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    text: Mapped[str] = mapped_column(Text, nullable=True)
+    media: Mapped[dict] = mapped_column(JSONB, nullable=True)  # [{type:'image|video', url:'s3://...'}]
+    reactions: Mapped[dict] = mapped_column(JSONB, nullable=True)  # {likes,comments,views,shares}
+    link: Mapped[str] = mapped_column(Text, nullable=True)  # исходная ссылка
+    lang: Mapped[str] = mapped_column(String(10), nullable=True)  # auto-detect
+    qdrant_point_id: Mapped[str] = mapped_column(Text, nullable=True)  # ID точки в Qdrant для эмбеддинга
+    raw: Mapped[dict] = mapped_column(JSONB, nullable=True)  # сырой ответ API для отладки
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship()
+    source: Mapped["Source"] = relationship(back_populates="posts")
+
+    def __repr__(self):
+        return f"<Post(id={self.id}, platform='{self.platform}', platform_post_id='{self.platform_post_id}')>"

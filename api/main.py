@@ -15,6 +15,9 @@ from schemas import (
     HealthResponse
 )
 from routers import auth, onboarding
+from middleware.auth_middleware import AuthMiddleware
+from middleware.rate_limit import RateLimitMiddleware
+from middleware.idempotency import IdempotencyMiddleware
 
 settings = get_settings()
 
@@ -28,7 +31,8 @@ app = FastAPI(
 app.include_router(auth.router)
 app.include_router(onboarding.router)
 
-# CORS middleware
+# Middleware (order matters: added last runs first)
+# 1. CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, specify exact origins
@@ -36,6 +40,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 2. Idempotency middleware (for POST/PUT/PATCH requests)
+app.add_middleware(IdempotencyMiddleware, cache_ttl_hours=24)
+
+# 3. Rate limiting middleware (requires user_id from AuthMiddleware)
+app.add_middleware(RateLimitMiddleware, requests_per_minute=30)
+
+# 4. Auth middleware (extracts user_id from JWT, runs first)
+app.add_middleware(AuthMiddleware)
 
 
 @app.get("/health", response_model=HealthResponse)
