@@ -22,7 +22,6 @@ from schemas import (
 )
 from services.scraping_service import ScrapingService
 from auth_utils import get_current_user_id
-from tasks.scraping_tasks import run_scraping_job
 
 router = APIRouter(tags=["Onboarding"])
 
@@ -208,11 +207,11 @@ async def scrape_source(
     await db.commit()
     await db.refresh(job)
 
-    # Launch Celery task
-    task = run_scraping_job.delay(
-        job_id=str(job.id),
-        user_id=str(user_id),
-        source_ids=[str(sid) for sid in source_ids] if source_ids else None
+    # Launch Celery task using lazy import to avoid loading celery at FastAPI startup
+    from celery_app import celery_app
+    task = celery_app.send_task(
+        'scraping.run_scraping_job',
+        args=[str(job.id), str(user_id), [str(sid) for sid in source_ids] if source_ids else None]
     )
 
     # Store Celery task ID for cancellation support
