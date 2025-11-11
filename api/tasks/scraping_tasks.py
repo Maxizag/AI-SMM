@@ -83,7 +83,8 @@ async def _mark_source(
     source_id: UUID,
     status: str,
     collected: int = 0,
-    error_code: Optional[str] = None
+    error_code: Optional[str] = None,
+    error_message: Optional[str] = None
 ) -> None:
     """
     Update source status and add to job progress
@@ -95,6 +96,7 @@ async def _mark_source(
         status: Source status (running|done|error)
         collected: Number of posts collected
         error_code: Error code if failed
+        error_message: User-facing error message for bot UX
     """
     # Get job
     result = await db.execute(
@@ -141,6 +143,8 @@ async def _mark_source(
     progress_entry['collected'] = collected
     if error_code:
         progress_entry['error_code'] = error_code
+    if error_message:
+        progress_entry['error_message'] = error_message
 
     await db.commit()
 
@@ -251,7 +255,8 @@ async def _execute_scraping_job(job_id: str, user_id: str, source_ids: Optional[
                             await _mark_source(
                                 db, job_uuid, source.id,
                                 status='error',
-                                error_code=ScrapingErrorCode.PLATFORM_PRIVATE.value
+                                error_code=ScrapingErrorCode.PLATFORM_PRIVATE.value,
+                                error_message=error['message']
                             )
                             continue
 
@@ -275,7 +280,8 @@ async def _execute_scraping_job(job_id: str, user_id: str, source_ids: Optional[
                             await _mark_source(
                                 db, job_uuid, source.id,
                                 status='error',
-                                error_code=ScrapingErrorCode.PLATFORM_INVALID_URL.value
+                                error_code=ScrapingErrorCode.PLATFORM_INVALID_URL.value,
+                                error_message=error['message']
                             )
                             continue
 
@@ -354,7 +360,8 @@ async def _execute_scraping_job(job_id: str, user_id: str, source_ids: Optional[
                     await _mark_source(
                         db, job_uuid, source.id,
                         status='error',
-                        error_code=ScrapingErrorCode.INTERNAL_ERROR.value
+                        error_code=ScrapingErrorCode.INTERNAL_ERROR.value,
+                        error_message=error['message']
                     )
 
             # Determine final status based on results
