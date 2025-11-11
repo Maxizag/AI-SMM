@@ -391,10 +391,19 @@ async def _save_posts(
     return saved_count
 
 
-@celery_app.task(bind=True, name='scraping.run_scraping_job')
+@celery_app.task(
+    bind=True,
+    name='scraping.run_scraping_job',
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=60,
+    retry_jitter=True,
+    max_retries=3,
+    default_retry_delay=10
+)
 def run_scraping_job(self, job_id: str, user_id: str, source_ids: Optional[list] = None):
     """
-    Celery task for asynchronous content scraping
+    Celery task for asynchronous content scraping with automatic retry
 
     This task:
     1. Updates job status to 'running'
@@ -405,12 +414,24 @@ def run_scraping_job(self, job_id: str, user_id: str, source_ids: Optional[list]
        - Updates progress in ScrapingJob
     4. Sets final status to 'done', 'partial', or 'error'
 
+    Retry behavior:
+    - Automatically retries on any exception
+    - Exponential backoff: 10s, 20s, 40s (max 60s)
+    - Random jitter to prevent thundering herd
+    - Max 3 retries before giving up
+
     Args:
         job_id: UUID of the ScrapingJob
         user_id: UUID of the user
         source_ids: Optional list of source IDs to scrape
     """
     import asyncio
+
+    # Log retry information
+    if self.request.retries > 0:
+        logger.info(
+            f"Retrying scraping job {job_id} - attempt {self.request.retries + 1}/{self.max_retries + 1}"
+        )
 
     # Store Celery task ID in job for cancellation support
     try:
