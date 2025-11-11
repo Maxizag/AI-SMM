@@ -134,6 +134,7 @@ class SourceVerifyResponse(BaseModel):
     post_count: int
     normalized_url: str
     message: str
+    recommendations: list[str] = []  # Actionable recommendations for the user
 
 
 # Updated Source Create schema (T6 spec)
