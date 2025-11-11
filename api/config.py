@@ -22,6 +22,17 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     jwt_secret: str = "changeme"
 
+    # Telegram Scraper (Telethon)
+    telegram_api_id: int = 0
+    telegram_api_hash: str = ""
+    telegram_session_name: str = "aismm_scraper"
+
+    # AWS S3 for media storage
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_s3_bucket: str = "aismm-media"
+    aws_s3_region: str = "us-east-1"
+
     # Environment
     env: str = "dev"
 
