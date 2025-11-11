@@ -228,15 +228,24 @@ class TelegramScraper(BaseScraper):
             )
 
             posts = []
-            s3_storage = get_s3_storage()
+
+            # Try to use S3 if configured, otherwise use local storage
+            s3_storage = None
+            try:
+                if settings.aws_access_key_id and settings.aws_secret_access_key:
+                    s3_storage = get_s3_storage()
+            except Exception as e:
+                logger.warning(f"S3 not available, will skip media: {get_safe_error_code(e)}")
 
             for msg in messages:
                 # Skip empty messages
                 if not msg.message and not msg.media:
                     continue
 
-                # Extract media
-                media_list = await self._process_media(msg, s3_storage)
+                # Extract media (only if S3 is available)
+                media_list = []
+                if s3_storage and msg.media:
+                    media_list = await self._process_media(msg, s3_storage)
 
                 # Build post object
                 post = {
