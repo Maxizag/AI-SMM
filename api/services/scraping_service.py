@@ -63,29 +63,53 @@ class ScrapingService:
 
                 if existing_source:
                     return {
-                        "status": "DUPLICATE",
-                        "message": "You have already added this source"
+                        'handle': existing_source.handle or '',
+                        'accessible': True,
+                        'private': existing_source.is_private,
+                        'post_count': existing_source.post_count,
+                        'normalized_url': url,
+                        'message': "You have already added this source"
                     }
 
             # Create scraper and verify
             scraper = ScraperFactory.create_scraper(url, platform=platform)
             verification_result = await scraper.verify()
 
-            logger.info(f"Verification result for {url}: {verification_result['status']}")
-            return verification_result
+            # Transform scraper response to T6 SourceVerifyResponse format
+            status = verification_result.get('status', 'ERROR')
+
+            response = {
+                'handle': verification_result.get('handle', ''),
+                'accessible': status == 'OK',
+                'private': verification_result.get('is_private', False),
+                'post_count': verification_result.get('posts_count', 0),
+                'normalized_url': url,  # scrapers don't normalize URLs in mock
+                'message': verification_result.get('message', f'Status: {status}')
+            }
+
+            logger.info(f"Verification result for {url}: {status}")
+            return response
 
         except ValueError as e:
             # Invalid URL or unsupported platform
             logger.error(f"Verification error: {e}")
             return {
-                "status": "INVALID_URL",
-                "message": str(e)
+                'handle': '',
+                'accessible': False,
+                'private': False,
+                'post_count': 0,
+                'normalized_url': url,
+                'message': str(e)
             }
         except Exception as e:
             logger.error(f"Unexpected error during verification: {e}")
             return {
-                "status": "ERROR",
-                "message": f"Verification failed: {str(e)}"
+                'handle': '',
+                'accessible': False,
+                'private': False,
+                'post_count': 0,
+                'normalized_url': url,
+                'message': f"Verification failed: {str(e)}"
             }
 
     async def scrape_source(

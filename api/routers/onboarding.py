@@ -22,7 +22,7 @@ from schemas import (
 )
 from services.scraping_service import ScrapingService
 from auth_utils import get_current_user_id
-from tasks.scraping_tasks import run_scraping_job
+from utils.url_normalizer import normalize_url
 
 router = APIRouter(tags=["Onboarding"])
 
@@ -74,7 +74,7 @@ async def verify_source(
     - accessible: Boolean indicating if source is accessible
     - private: Boolean indicating if source is private
     - post_count: Estimated number of posts
-    - normalized_url: Cleaned/normalized URL
+    - normalized_url: Cleaned/normalized URL (for deduplication)
     - message: Human-readable status message
 
     Returns one of:
@@ -86,9 +86,12 @@ async def verify_source(
     url = verify_data.url.strip()
     platform = verify_data.platform
 
+    # Normalize URL first
+    normalized_url = normalize_url(url)
+
     # Use scraping service for verification
     scraping_service = ScrapingService(db)
-    result = await scraping_service.verify_source(url, platform=platform)
+    result = await scraping_service.verify_source(normalized_url, platform=platform)
 
     return SourceVerifyResponse(**result)
 
@@ -116,27 +119,38 @@ async def create_source_v2(
     - source_id: UUID of created source
     - status: "verified"
 
+    Error (409):
+    - error: "duplicate_source"
+    - message: "Эта ссылка уже добавлена"
+
     Note: Requires Bearer token authentication.
     """
-    # Check for duplicates
+    # Normalize URL for deduplication
+    normalized_url = normalize_url(source_data.url)
+
+    # Check for duplicates by normalized URL
     result = await db.execute(
         select(Source)
         .where(Source.user_id == current_user_id)
-        .where(Source.url == source_data.url)
+        .where(Source.url == normalized_url)
     )
     existing_source = result.scalar_one_or_none()
 
     if existing_source:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Source already exists for this user"
+            detail={
+                "error": "duplicate_source",
+                "message": "Эта ссылка уже добавлена",
+                "existing_source_id": str(existing_source.id)
+            }
         )
 
-    # Create source with 'verified' status
+    # Create source with 'verified' status (using normalized URL)
     source = Source(
         user_id=current_user_id,
         platform=source_data.platform,
-        url=source_data.url,
+        url=normalized_url,  # Store normalized URL for deduplication
         handle=source_data.handle,
         is_private=source_data.private,
         post_count=source_data.post_count_hint or 0,
@@ -208,11 +222,11 @@ async def scrape_source(
     await db.commit()
     await db.refresh(job)
 
-    # Launch Celery task
-    task = run_scraping_job.delay(
-        job_id=str(job.id),
-        user_id=str(user_id),
-        source_ids=[str(sid) for sid in source_ids] if source_ids else None
+    # Launch Celery task using lazy import to avoid loading celery at FastAPI startup
+    from celery_app import celery_app
+    task = celery_app.send_task(
+        'scraping.run_scraping_job',
+        args=[str(job.id), str(user_id), [str(sid) for sid in source_ids] if source_ids else None]
     )
 
     # Store Celery task ID for cancellation support
