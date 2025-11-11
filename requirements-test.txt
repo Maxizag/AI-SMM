@@ -1,12 +1,13 @@
 # Minimal requirements for testing Telegram scraper locally
 # Without database dependencies
+# Compatible with Python 3.13
 
 # Core
-pydantic==2.5.3
-pydantic-settings==2.1.0
-python-dotenv==1.0.0
+pydantic>=2.5.3
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
 
 # Scrapers
-telethon==1.34.0
-boto3==1.34.34
-Pillow==10.2.0
+telethon>=1.34.0
+boto3>=1.34.34
+Pillow>=10.3.0
