@@ -62,13 +62,21 @@ class ScrapingService:
                 existing_source = result.scalar_one_or_none()
 
                 if existing_source:
+                    # Generate recommendations for existing source
+                    recommendations = []
+                    if existing_source.is_private:
+                        recommendations.append("Откройте профиль временно или загрузите файл с постами через /ingest/manual_posts")
+                    if existing_source.post_count < 50:
+                        recommendations.append("Добавьте ещё источники/файл/референсы для лучшего качества анализа стиля")
+
                     return {
                         'handle': existing_source.handle or '',
                         'accessible': True,
                         'private': existing_source.is_private,
                         'post_count': existing_source.post_count,
                         'normalized_url': url,
-                        'message': "You have already added this source"
+                        'message': "You have already added this source",
+                        'recommendations': recommendations
                     }
 
             # Create scraper and verify
@@ -77,14 +85,24 @@ class ScrapingService:
 
             # Transform scraper response to T6 SourceVerifyResponse format
             status = verification_result.get('status', 'ERROR')
+            is_private = verification_result.get('is_private', False)
+            post_count = verification_result.get('posts_count', 0)
+
+            # Generate recommendations based on private status and post count
+            recommendations = []
+            if is_private:
+                recommendations.append("Откройте профиль временно или загрузите файл с постами через /ingest/manual_posts")
+            if post_count < 50:
+                recommendations.append("Добавьте ещё источники/файл/референсы для лучшего качества анализа стиля")
 
             response = {
                 'handle': verification_result.get('handle', ''),
                 'accessible': status == 'OK',
-                'private': verification_result.get('is_private', False),
-                'post_count': verification_result.get('posts_count', 0),
+                'private': is_private,
+                'post_count': post_count,
                 'normalized_url': url,  # scrapers don't normalize URLs in mock
-                'message': verification_result.get('message', f'Status: {status}')
+                'message': verification_result.get('message', f'Status: {status}'),
+                'recommendations': recommendations
             }
 
             logger.info(f"Verification result for {url}: {status}")
@@ -99,7 +117,8 @@ class ScrapingService:
                 'private': False,
                 'post_count': 0,
                 'normalized_url': url,
-                'message': str(e)
+                'message': str(e),
+                'recommendations': []
             }
         except Exception as e:
             logger.error(f"Unexpected error during verification: {e}")
@@ -109,7 +128,8 @@ class ScrapingService:
                 'private': False,
                 'post_count': 0,
                 'normalized_url': url,
-                'message': f"Verification failed: {str(e)}"
+                'message': f"Verification failed: {str(e)}",
+                'recommendations': []
             }
 
     async def scrape_source(

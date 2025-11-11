@@ -101,7 +101,14 @@ services:
       context: ../api
       dockerfile: Dockerfile
     container_name: aismm-celery-worker
-    command: celery -A celery_app worker --loglevel=info --concurrency=2
+    command: >
+      celery -A celery_app worker
+      --loglevel=info
+      --concurrency=2
+      --max-tasks-per-child=100
+      --time-limit=600
+      --soft-time-limit=540
+      --prefetch-multiplier=1
     env_file:
       - ../.env
     environment:
@@ -114,6 +121,7 @@ services:
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ENV=${ENV:-dev}
+      - C_FORCE_ROOT=true
     volumes:
       - ../api:/app
     depends_on:
@@ -123,6 +131,12 @@ services:
         condition: service_healthy
       api:
         condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A celery_app inspect ping -d celery@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
     networks:
       - aismm-network
