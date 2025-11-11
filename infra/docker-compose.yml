@@ -130,7 +130,7 @@ services:
       redis:
         condition: service_healthy
       api:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "celery -A celery_app inspect ping -d celery@$$HOSTNAME"]
       interval: 30s
