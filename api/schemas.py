@@ -172,11 +172,20 @@ class SourceProgress(BaseModel):
     status: str  # queued|running|done|error
 
 
+class ScrapingError(BaseModel):
+    """Structured scraping error"""
+    code: str
+    message: str
+    source_id: Optional[str] = None
+    platform: Optional[str] = None
+    context: Optional[dict] = None
+
+
 class JobStatusResponse(BaseModel):
     job_id: UUID
     status: str  # queued|running|done|error|partial
-    progress: dict  # {total_collected: int, by_source: [SourceProgress]}
-    errors: list[str] = []
+    progress: dict  # {total_collected: int, by_source: [SourceProgress], summary: {...}}
+    errors: list[ScrapingError | dict] = []  # Support both structured and legacy errors
 
 
 # Manual posts schemas

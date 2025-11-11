@@ -13,6 +13,11 @@ from celery_app import celery_app
 from database import AsyncSessionLocal
 from models import ScrapingJob, Source, Post, User
 from scrapers import ScraperFactory
+from scrapers.error_codes import (
+    ScrapingErrorCode,
+    create_error_object,
+    get_error_message
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +84,9 @@ async def _execute_scraping_job(job_id: str, user_id: str, source_ids: Optional[
             target_posts = job.target_posts
             min_posts = job.min_posts
             total_collected = 0
-            all_errors = []
+            all_errors = []  # List of structured error objects
+            private_sources_count = 0
+            failed_sources_count = 0
 
             # Scrape each source
             for source in sources:
@@ -103,6 +110,74 @@ async def _execute_scraping_job(job_id: str, user_id: str, source_ids: Optional[
                         platform=source.platform
                     )
 
+                    # First, verify source accessibility
+                    # This helps catch private accounts early
+                    try:
+                        verification = await scraper.verify()
+                        verify_status = verification.get('status', 'OK')
+
+                        # Handle different verification statuses
+                        if verify_status == 'CLOSED' or verification.get('is_private', False):
+                            # Account is private
+                            private_sources_count += 1
+                            error = create_error_object(
+                                ScrapingErrorCode.PLATFORM_PRIVATE,
+                                source_id=str(source.id),
+                                platform=source.platform
+                            )
+                            all_errors.append(error)
+
+                            source.status = 'error'
+                            source.meta = source.meta or {}
+                            source.meta['error_code'] = ScrapingErrorCode.PLATFORM_PRIVATE.value
+                            source.meta['error'] = error['message']
+                            source.meta['is_private'] = True
+                            source.meta['error_time'] = datetime.utcnow().isoformat()
+
+                            source_progress['status'] = 'error'
+                            source_progress['error_code'] = ScrapingErrorCode.PLATFORM_PRIVATE.value
+                            await db.commit()
+                            continue
+
+                        elif verify_status == 'INVALID_URL':
+                            error = create_error_object(
+                                ScrapingErrorCode.PLATFORM_INVALID_URL,
+                                source_id=str(source.id),
+                                platform=source.platform
+                            )
+                            all_errors.append(error)
+
+                            source.status = 'error'
+                            source.meta = source.meta or {}
+                            source.meta['error_code'] = ScrapingErrorCode.PLATFORM_INVALID_URL.value
+                            source.meta['error'] = error['message']
+                            source.meta['error_time'] = datetime.utcnow().isoformat()
+
+                            source_progress['status'] = 'error'
+                            source_progress['error_code'] = ScrapingErrorCode.PLATFORM_INVALID_URL.value
+                            failed_sources_count += 1
+                            await db.commit()
+                            continue
+
+                        elif verify_status == 'LOW_CONTENT':
+                            # Source has insufficient content
+                            error = create_error_object(
+                                ScrapingErrorCode.PLATFORM_INSUFFICIENT_CONTENT,
+                                source_id=str(source.id),
+                                platform=source.platform,
+                                posts_count=verification.get('posts_count', 0)
+                            )
+                            all_errors.append(error)
+
+                            source.meta = source.meta or {}
+                            source.meta['warning'] = 'insufficient_content'
+                            source.meta['estimated_posts'] = verification.get('posts_count', 0)
+                            # Don't fail the source, try to scrape what we can
+
+                    except Exception as verify_error:
+                        logger.warning(f"Verification failed for source {source.id}, continuing anyway: {verify_error}")
+                        # Continue with scraping even if verification fails
+
                     # Calculate how many posts to scrape from this source
                     # Distribute evenly across sources
                     posts_per_source = target_posts // len(sources)
@@ -111,6 +186,10 @@ async def _execute_scraping_job(job_id: str, user_id: str, source_ids: Optional[
 
                     # Scrape posts
                     scraped_posts = await scraper.scrape(limit=limit)
+
+                    if not scraped_posts:
+                        logger.warning(f"No posts scraped from source {source.id}")
+                        failed_sources_count += 1
 
                     # Save posts to database
                     saved_count = await _save_posts(db, scraped_posts, source, UUID(user_id))
@@ -135,15 +214,27 @@ async def _execute_scraping_job(job_id: str, user_id: str, source_ids: Optional[
                     error_msg = f"Error scraping source {source.id}: {str(e)}"
                     logger.error(error_msg)
 
+                    failed_sources_count += 1
+
+                    # Create structured error
+                    error = create_error_object(
+                        ScrapingErrorCode.INTERNAL_ERROR,
+                        source_id=str(source.id),
+                        platform=source.platform,
+                        details=str(e)
+                    )
+                    all_errors.append(error)
+
                     # Update source status
                     source.status = 'error'
                     source.meta = source.meta or {}
+                    source.meta['error_code'] = ScrapingErrorCode.INTERNAL_ERROR.value
                     source.meta['error'] = str(e)
                     source.meta['error_time'] = datetime.utcnow().isoformat()
 
                     # Track error
                     source_progress['status'] = 'error'
-                    all_errors.append(error_msg)
+                    source_progress['error_code'] = ScrapingErrorCode.INTERNAL_ERROR.value
 
                 finally:
                     # Add source progress to job
@@ -154,19 +245,65 @@ async def _execute_scraping_job(job_id: str, user_id: str, source_ids: Optional[
             # Determine final status
             job.completed_at = datetime.utcnow()
 
-            if total_collected >= target_posts:
+            # Check if all sources failed
+            if failed_sources_count == len(sources) and total_collected == 0:
+                job.status = 'error'
+                error = create_error_object(ScrapingErrorCode.JOB_ALL_SOURCES_FAILED)
+                all_errors.append(error)
+                logger.error(f"Job {job_id} failed: all sources failed")
+
+            # Check if we collected enough posts
+            elif total_collected >= target_posts:
                 job.status = 'done'
                 logger.info(f"Job {job_id} completed successfully: {total_collected}/{target_posts} posts")
+
+                # Add warning if some sources had low content
+                if total_collected < 50:
+                    error = create_error_object(
+                        ScrapingErrorCode.JOB_INSUFFICIENT_POSTS,
+                        total_collected=total_collected,
+                        min_required=50
+                    )
+                    all_errors.append(error)
+
             elif total_collected >= min_posts:
                 job.status = 'partial'
                 logger.warning(f"Job {job_id} partially completed: {total_collected}/{target_posts} posts")
+
+                # Add recommendation if below 50 posts
+                if total_collected < 50:
+                    error = create_error_object(
+                        ScrapingErrorCode.JOB_INSUFFICIENT_POSTS,
+                        total_collected=total_collected,
+                        min_required=50
+                    )
+                    all_errors.append(error)
+
             else:
+                # Collected less than min_posts
                 job.status = 'error'
-                all_errors.append(f"Insufficient posts collected: {total_collected}/{min_posts} minimum")
+                error = create_error_object(
+                    ScrapingErrorCode.JOB_INSUFFICIENT_POSTS,
+                    total_collected=total_collected,
+                    min_required=min_posts,
+                    target=target_posts
+                )
+                all_errors.append(error)
                 logger.error(f"Job {job_id} failed: only {total_collected}/{min_posts} posts collected")
 
+            # Store structured errors
             if all_errors:
                 job.errors = all_errors
+
+            # Add summary to job metadata
+            job.progress['summary'] = {
+                'total_sources': len(sources),
+                'private_sources': private_sources_count,
+                'failed_sources': failed_sources_count,
+                'successful_sources': len(sources) - failed_sources_count - private_sources_count,
+                'total_collected': total_collected,
+                'quality_sufficient': total_collected >= 50
+            }
 
             await db.commit()
             logger.info(f"Scraping job {job_id} finished with status: {job.status}")
