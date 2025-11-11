@@ -281,17 +281,37 @@ async def get_job_status(
             detail=f"Job with id {job_id} not found"
         )
 
-    # Build progress response
+    # Build progress response with summary
     progress = {
         "total_collected": job.total_collected,
-        "by_source": job.progress.get("by_source", [])
+        "by_source": job.progress.get("by_source", []),
+        "summary": job.progress.get("summary", {})
     }
+
+    # Ensure errors are properly structured
+    # Convert legacy string errors to structured format if needed
+    structured_errors = []
+    for error in (job.errors or []):
+        if isinstance(error, dict):
+            structured_errors.append(error)
+        elif isinstance(error, str):
+            # Legacy string error - wrap it
+            structured_errors.append({
+                "code": "INTERNAL_ERROR",
+                "message": error
+            })
+        else:
+            # Unknown format, convert to string
+            structured_errors.append({
+                "code": "INTERNAL_ERROR",
+                "message": str(error)
+            })
 
     return JobStatusResponse(
         job_id=job.id,
         status=job.status,
         progress=progress,
-        errors=job.errors or []
+        errors=structured_errors
     )
 
 
