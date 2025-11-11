@@ -127,7 +127,8 @@ class TelegramScraper(BaseScraper):
             Verification result with status, handle, is_private, posts_count
         """
         try:
-            await self.client.connect()
+            # Start client (will prompt for phone/code on first run)
+            await self.client.start()
 
             # Try to get channel entity
             try:
@@ -216,7 +217,8 @@ class TelegramScraper(BaseScraper):
         }
         """
         try:
-            await self.client.connect()
+            # Start client (will prompt for phone/code on first run)
+            await self.client.start()
 
             # Get channel entity
             entity = await self.client.get_entity(self.handle)
