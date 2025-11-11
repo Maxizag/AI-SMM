@@ -18,6 +18,7 @@ from scrapers.error_codes import (
     create_error_object,
     get_error_message
 )
+from utils.safe_logging import sanitize_error_message, get_safe_error_code
 
 logger = logging.getLogger(__name__)
 
@@ -302,7 +303,7 @@ async def _execute_scraping_job(job_id: str, user_id: str, source_ids: Optional[
                             # Don't fail, try to scrape what we can
 
                     except Exception as verify_error:
-                        logger.warning(f"Verification failed for {source.id}, continuing: {verify_error}")
+                        logger.warning(f"Verification failed for {source.id}, continuing: {get_safe_error_code(verify_error)}")
                         # Continue with scraping even if verification fails
 
                     # Calculate how many posts to scrape
@@ -337,15 +338,16 @@ async def _execute_scraping_job(job_id: str, user_id: str, source_ids: Optional[
                         break
 
                 except Exception as e:
-                    logger.error(f"Error scraping {source.id}: {str(e)}")
+                    # Log only error type, not full message (security: no PII in logs)
+                    logger.error(f"Error scraping {source.id}: {get_safe_error_code(e)}")
                     failed_sources_count += 1
 
-                    # Create structured error
+                    # Create structured error (error_code only, no details in logs)
                     error = create_error_object(
                         ScrapingErrorCode.INTERNAL_ERROR,
                         source_id=str(source.id),
                         platform=source.platform,
-                        details=str(e)
+                        details=get_safe_error_code(e)  # Store only error type, not message
                     )
                     all_errors.append(error)
 
@@ -353,7 +355,7 @@ async def _execute_scraping_job(job_id: str, user_id: str, source_ids: Optional[
                     source.status = 'error'
                     source.meta = source.meta or {}
                     source.meta['error_code'] = ScrapingErrorCode.INTERNAL_ERROR.value
-                    source.meta['error'] = str(e)
+                    source.meta['error_type'] = get_safe_error_code(e)  # Store type, not full message
                     source.meta['error_time'] = datetime.utcnow().isoformat()
                     await db.commit()
 
@@ -433,18 +435,19 @@ async def _execute_scraping_job(job_id: str, user_id: str, source_ids: Optional[
             logger.info(f"Job {job_id} finished: {final_status}")
 
         except Exception as e:
-            logger.error(f"Fatal error in job {job_id}: {e}", exc_info=True)
+            # Log only error type (security: no PII/stack traces in production logs)
+            logger.error(f"Fatal error in job {job_id}: {get_safe_error_code(e)}")
 
             # Try to update job status to error
             try:
                 async with AsyncSessionLocal() as error_db:
                     error = create_error_object(
                         ScrapingErrorCode.INTERNAL_ERROR,
-                        details=f"Fatal error: {str(e)}"
+                        details=get_safe_error_code(e)  # Store only error type
                     )
                     await _update_job(error_db, job_uuid, status='error', errors=[error])
             except Exception as inner_e:
-                logger.error(f"Failed to update job after fatal error: {inner_e}")
+                logger.error(f"Failed to update job after fatal error: {get_safe_error_code(inner_e)}")
 
 
 async def _save_posts(
@@ -502,7 +505,8 @@ async def _save_posts(
             saved_count += 1
 
         except Exception as e:
-            logger.error(f"Error saving post {post_data.get('platform_post_id')}: {e}")
+            # Log only error type (security: no post content in logs)
+            logger.error(f"Error saving post {post_data.get('platform_post_id')}: {get_safe_error_code(e)}")
             continue
 
     # Commit all posts at once

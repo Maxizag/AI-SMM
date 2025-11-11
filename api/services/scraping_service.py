@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from models import Source, Post, User
 from scrapers import ScraperFactory
+from utils.safe_logging import sanitize_error_message, get_safe_error_code
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +111,8 @@ class ScrapingService:
 
         except ValueError as e:
             # Invalid URL or unsupported platform
-            logger.error(f"Verification error: {e}")
+            # Log only error type (security: no URLs in logs)
+            logger.error(f"Verification error: {get_safe_error_code(e)}")
             return {
                 'handle': '',
                 'accessible': False,
@@ -121,14 +123,15 @@ class ScrapingService:
                 'recommendations': []
             }
         except Exception as e:
-            logger.error(f"Unexpected error during verification: {e}")
+            # Log only error type (security: no sensitive data in logs)
+            logger.error(f"Unexpected error during verification: {get_safe_error_code(e)}")
             return {
                 'handle': '',
                 'accessible': False,
                 'private': False,
                 'post_count': 0,
                 'normalized_url': url,
-                'message': f"Verification failed: {str(e)}",
+                'message': "Verification failed",
                 'recommendations': []
             }
 
@@ -204,20 +207,21 @@ class ScrapingService:
             }
 
         except Exception as e:
-            logger.error(f"Error during scraping: {e}")
+            # Log only error type (security: no sensitive data in logs)
+            logger.error(f"Error during scraping: {get_safe_error_code(e)}")
 
             # Update source status to 'error'
             if source:
                 source.status = 'error'
                 source.meta = source.meta or {}
-                source.meta['error'] = str(e)
+                source.meta['error_type'] = get_safe_error_code(e)  # Store only error type
                 source.meta['error_time'] = datetime.utcnow().isoformat()
                 await self.db.commit()
 
             return {
                 "status": "ERROR",
                 "posts_collected": 0,
-                "message": f"Scraping failed: {str(e)}"
+                "message": "Scraping failed"
             }
 
     async def _save_posts(
@@ -274,7 +278,8 @@ class ScrapingService:
                 saved_count += 1
 
             except Exception as e:
-                logger.error(f"Error saving post {post_data.get('platform_post_id')}: {e}")
+                # Log only error type (security: no post content in logs)
+                logger.error(f"Error saving post {post_data.get('platform_post_id')}: {get_safe_error_code(e)}")
                 continue
 
         # Commit all posts at once

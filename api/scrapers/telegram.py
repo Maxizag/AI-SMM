@@ -132,6 +132,8 @@ class TelegramScraper(BaseScraper):
                     "shares": 10 + i
                 },
                 "link": f"https://t.me/{self.handle}/{1000 + i}",
+                # SECURITY: raw must NOT contain PII, tokens, or full message data
+                # Only store non-sensitive metadata needed for debugging
                 "raw": {}
             })
 
