@@ -140,9 +140,21 @@ def extract_entities_metadata(message: Message) -> Dict[str, Any]:
 
     text = message.message or ""
 
+    # Convert text to UTF-16 for correct entity offset calculation
+    # Telegram uses UTF-16 code units for entity offsets
+    text_utf16 = text.encode('utf-16-le')
+
     for entity in message.entities:
-        # Extract text for this entity
-        entity_text = text[entity.offset:entity.offset + entity.length]
+        # Calculate byte offsets in UTF-16
+        start_byte = entity.offset * 2  # Each UTF-16 code unit is 2 bytes
+        end_byte = (entity.offset + entity.length) * 2
+
+        # Extract text using UTF-16 offsets and decode back to UTF-8
+        try:
+            entity_text = text_utf16[start_byte:end_byte].decode('utf-16-le')
+        except (UnicodeDecodeError, IndexError):
+            # Fallback to simple slicing if UTF-16 fails
+            entity_text = text[entity.offset:entity.offset + entity.length]
 
         # Hashtags
         if isinstance(entity, MessageEntityHashtag):
