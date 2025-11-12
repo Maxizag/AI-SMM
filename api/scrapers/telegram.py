@@ -303,17 +303,35 @@ class TelegramScraper(BaseScraper):
         """
         Download and upload media files to S3
 
+        Supports:
+        - Photos (single and albums)
+        - Videos
+        - GIF/animations
+        - Audio/voice messages
+        - Video notes (round videos)
+        - Documents (PDF, DOCX, etc.)
+
         Args:
             message: Telethon message object
             s3_storage: S3Storage instance
 
         Returns:
-            List of media objects with type and S3 URL
+            List of media objects with type, URL, and metadata
 
         Example:
             [
-                {"type": "photo", "url": "s3://aismm-media/telegram/abc123.jpg"},
-                {"type": "video", "url": "s3://aismm-media/telegram/xyz789.mp4"}
+                {
+                    "type": "photo",
+                    "url": "s3://aismm-media/telegram/abc123.jpg",
+                    "grouped_id": "12345"  # Present if part of album
+                },
+                {
+                    "type": "document",
+                    "url": "s3://aismm-media/telegram/file.pdf",
+                    "filename": "document.pdf",
+                    "mime_type": "application/pdf",
+                    "size": 1024000
+                }
             ]
         """
         media_list = []
@@ -329,18 +347,74 @@ class TelegramScraper(BaseScraper):
                     s3_storage
                 )
                 if media_obj:
+                    # Add grouped_id if this is part of an album
+                    if message.grouped_id:
+                        media_obj["grouped_id"] = str(message.grouped_id)
                     media_list.append(media_obj)
 
-            # Handle video/document
+            # Handle document (video, gif, audio, file)
             elif isinstance(message.media, MessageMediaDocument):
-                # Check if it's a video
-                if message.media.document.mime_type.startswith('video/'):
-                    media_obj = await self._download_and_upload_video(
-                        message,
-                        s3_storage
+                doc = message.media.document
+                mime_type = doc.mime_type or ""
+
+                # Get document attributes
+                attributes = doc.attributes
+                is_voice = False
+                is_video_note = False
+                is_animated = False
+                filename = None
+
+                for attr in attributes:
+                    if hasattr(attr, 'voice') and attr.voice:
+                        is_voice = True
+                    if hasattr(attr, 'round_message') and attr.round_message:
+                        is_video_note = True
+                    if hasattr(attr, 'animated') and attr.animated:
+                        is_animated = True
+                    if hasattr(attr, 'file_name'):
+                        filename = attr.file_name
+
+                # Determine media type and process accordingly
+                if is_video_note:
+                    media_obj = await self._download_and_upload_document(
+                        message, s3_storage, media_type="video_note"
                     )
-                    if media_obj:
-                        media_list.append(media_obj)
+                elif is_voice:
+                    media_obj = await self._download_and_upload_document(
+                        message, s3_storage, media_type="voice"
+                    )
+                elif mime_type.startswith('video/') or is_animated:
+                    # Regular video or GIF/animation
+                    if 'gif' in mime_type.lower() or is_animated:
+                        media_type = "gif"
+                    else:
+                        media_type = "video"
+                    media_obj = await self._download_and_upload_video(
+                        message, s3_storage, media_type=media_type
+                    )
+                elif mime_type.startswith('audio/'):
+                    media_obj = await self._download_and_upload_document(
+                        message, s3_storage, media_type="audio"
+                    )
+                elif mime_type.startswith('image/'):
+                    # Some images come as documents (stickers, etc)
+                    media_obj = await self._download_and_upload_document(
+                        message, s3_storage, media_type="image"
+                    )
+                else:
+                    # Generic document (PDF, DOCX, etc.)
+                    media_obj = await self._download_and_upload_document(
+                        message, s3_storage, media_type="document"
+                    )
+
+                if media_obj:
+                    # Add filename if available
+                    if filename:
+                        media_obj["filename"] = filename
+                    # Add grouped_id if this is part of an album
+                    if message.grouped_id:
+                        media_obj["grouped_id"] = str(message.grouped_id)
+                    media_list.append(media_obj)
 
         except Exception as e:
             # Log only error type (security: no media URLs in logs)
@@ -394,22 +468,24 @@ class TelegramScraper(BaseScraper):
     async def _download_and_upload_video(
         self,
         message: Message,
-        s3_storage
+        s3_storage,
+        media_type: str = "video"
     ) -> Dict[str, str]:
         """
-        Download video and upload to S3
+        Download video/gif and upload to S3
 
         Args:
             message: Telethon message with video
             s3_storage: S3Storage instance
+            media_type: Type of media ("video" or "gif")
 
         Returns:
-            Media object with type and S3 URL
+            Media object with type, URL, and metadata
         """
         temp_file = None
         try:
-            # Get file extension from mime type
-            mime_type = message.media.document.mime_type
+            doc = message.media.document
+            mime_type = doc.mime_type or "video/mp4"
             extension = mime_type.split('/')[-1]  # e.g., "video/mp4" -> "mp4"
 
             # Create temporary file
@@ -421,7 +497,7 @@ class TelegramScraper(BaseScraper):
 
             # Download video (with size limit to avoid huge files)
             # Skip videos larger than 50MB
-            file_size = message.media.document.size
+            file_size = doc.size
             if file_size > 50 * 1024 * 1024:  # 50MB
                 logger.warning(f"Video too large: {file_size} bytes, skipping")
                 return None
@@ -436,10 +512,141 @@ class TelegramScraper(BaseScraper):
             )
 
             if s3_url:
-                return {"type": "video", "url": s3_url}
+                # Get video duration if available
+                duration = None
+                for attr in doc.attributes:
+                    if hasattr(attr, 'duration'):
+                        duration = attr.duration
+                        break
+
+                result = {
+                    "type": media_type,
+                    "url": s3_url,
+                    "mime_type": mime_type,
+                    "size": file_size
+                }
+
+                if duration:
+                    result["duration"] = duration
+
+                return result
 
         except Exception as e:
             logger.error(f"Video processing error: {get_safe_error_code(e)}")
+        finally:
+            # Clean up temporary file
+            if temp_file and os.path.exists(temp_file):
+                os.unlink(temp_file)
+
+        return None
+
+    async def _download_and_upload_document(
+        self,
+        message: Message,
+        s3_storage,
+        media_type: str = "document"
+    ) -> Dict[str, str]:
+        """
+        Download document/audio/voice and upload to S3
+
+        Supports:
+        - Documents (PDF, DOCX, TXT, etc.)
+        - Audio files
+        - Voice messages
+        - Video notes (round videos)
+        - Images (as documents)
+
+        Args:
+            message: Telethon message with document
+            s3_storage: S3Storage instance
+            media_type: Type of media ("document", "audio", "voice", "video_note", "image")
+
+        Returns:
+            Media object with type, URL, and metadata
+        """
+        temp_file = None
+        try:
+            doc = message.media.document
+            mime_type = doc.mime_type or "application/octet-stream"
+
+            # Get file extension from mime type or filename
+            extension = None
+            filename = None
+
+            # Try to get filename from attributes
+            for attr in doc.attributes:
+                if hasattr(attr, 'file_name') and attr.file_name:
+                    filename = attr.file_name
+                    # Extract extension from filename
+                    if '.' in filename:
+                        extension = filename.rsplit('.', 1)[1]
+                    break
+
+            # Fallback to mime type for extension
+            if not extension:
+                extension = mime_type.split('/')[-1]
+                # Handle special cases
+                if extension == 'octet-stream':
+                    extension = 'bin'
+
+            # Create temporary file
+            with tempfile.NamedTemporaryFile(
+                delete=False,
+                suffix=f'.{extension}'
+            ) as f:
+                temp_file = f.name
+
+            # Download document (with size limit)
+            # Skip files larger than 100MB for documents, 20MB for audio/voice
+            size_limit = 20 * 1024 * 1024 if media_type in ['audio', 'voice', 'video_note'] else 100 * 1024 * 1024
+            file_size = doc.size
+
+            if file_size > size_limit:
+                logger.warning(f"{media_type} too large: {file_size} bytes, skipping")
+                return None
+
+            await self.client.download_media(message.media, temp_file)
+
+            # Upload to S3
+            s3_url = s3_storage.upload_file(
+                temp_file,
+                folder=f"telegram/{self.handle}",
+                public=True
+            )
+
+            if s3_url:
+                result = {
+                    "type": media_type,
+                    "url": s3_url,
+                    "mime_type": mime_type,
+                    "size": file_size
+                }
+
+                # Add filename if available
+                if filename:
+                    result["filename"] = filename
+
+                # Extract additional metadata from attributes
+                for attr in doc.attributes:
+                    # Duration (for audio/voice/video_note)
+                    if hasattr(attr, 'duration') and attr.duration:
+                        result["duration"] = attr.duration
+
+                    # Audio metadata
+                    if hasattr(attr, 'title') and attr.title:
+                        result["title"] = attr.title
+                    if hasattr(attr, 'performer') and attr.performer:
+                        result["performer"] = attr.performer
+
+                    # Image dimensions
+                    if hasattr(attr, 'w') and hasattr(attr, 'h'):
+                        result["width"] = attr.w
+                        result["height"] = attr.h
+
+                return result
+
+        except Exception as e:
+            logger.error(f"Document processing error: {get_safe_error_code(e)}")
         finally:
             # Clean up temporary file
             if temp_file and os.path.exists(temp_file):
