@@ -1,63 +1,63 @@
-# Security Guidelines: Logging & Data Storage
+# Руководство по безопасности: Логирование и хранение данных
 
-## Overview
+## Обзор
 
-This document outlines security practices for logging and data storage to prevent PII (Personally Identifiable Information) and sensitive data leakage.
+Этот документ описывает практики безопасности для логирования и хранения данных с целью предотвращения утечки PII (персональной идентифицируемой информации) и конфиденциальных данных.
 
-## 1. Logging Best Practices
+## 1. Лучшие практики логирования
 
-### ✅ DO: Log only safe information
+### ✅ ПРАВИЛЬНО: Логировать только безопасную информацию
 
-**Allowed in logs:**
-- Error types (e.g., `ValueError`, `ConnectionError`)
-- Status codes and structured error codes (e.g., `PLATFORM_PRIVATE`)
-- UUIDs (source_id, job_id, user_id)
-- Counters and metrics (posts collected, retry count)
-- Platform names (telegram, vk, instagram)
-- Timestamps
+**Разрешено в логах:**
+- Типы ошибок (например, `ValueError`, `ConnectionError`)
+- Коды статусов и структурированные коды ошибок (например, `PLATFORM_PRIVATE`)
+- UUID (source_id, job_id, user_id)
+- Счетчики и метрики (собрано постов, количество повторов)
+- Названия платформ (telegram, vk, instagram)
+- Временные метки
 
-**Example:**
+**Пример:**
 ```python
-logger.info(f"Scraping source {source.id} ({source.platform})")
-logger.error(f"Error scraping {source.id}: {get_safe_error_code(e)}")
+logger.info(f"Скрапинг источника {source.id} ({source.platform})")
+logger.error(f"Ошибка скрапинга {source.id}: {get_safe_error_code(e)}")
 ```
 
-### ❌ DON'T: Log sensitive data
+### ❌ НЕПРАВИЛЬНО: Логировать конфиденциальные данные
 
-**NEVER log:**
-- Full error messages with URLs or tokens
-- User handles or usernames
-- Post content or text
-- Email addresses or phone numbers
-- API keys or JWT tokens
-- Stack traces in production (contains code paths and values)
-- Full exception messages (`str(e)` may contain sensitive data)
+**НИКОГДА не логировать:**
+- Полные сообщения об ошибках с URL или токенами
+- Хендлы пользователей или имена пользователей
+- Содержимое или текст постов
+- Email адреса или номера телефонов
+- API ключи или JWT токены
+- Stack traces в продакшене (содержат пути к коду и значения)
+- Полные сообщения об исключениях (`str(e)` может содержать конфиденциальные данные)
 
-**Bad example:**
+**Плохой пример:**
 ```python
-# ❌ WRONG - may expose URLs with tokens
-logger.error(f"Failed to fetch: {str(e)}")
+# ❌ НЕПРАВИЛЬНО - может раскрыть URL с токенами
+logger.error(f"Не удалось получить: {str(e)}")
 
-# ❌ WRONG - exposes post content
-logger.debug(f"Saving post: {post_data['text']}")
+# ❌ НЕПРАВИЛЬНО - раскрывает содержимое поста
+logger.debug(f"Сохранение поста: {post_data['text']}")
 ```
 
-**Good example:**
+**Хороший пример:**
 ```python
-# ✅ CORRECT - only error type
-logger.error(f"Failed to fetch: {get_safe_error_code(e)}")
+# ✅ ПРАВИЛЬНО - только тип ошибки
+logger.error(f"Не удалось получить: {get_safe_error_code(e)}")
 
-# ✅ CORRECT - only post ID
-logger.debug(f"Saving post: {post_data['platform_post_id']}")
+# ✅ ПРАВИЛЬНО - только ID поста
+logger.debug(f"Сохранение поста: {post_data['platform_post_id']}")
 ```
 
-## 2. Safe Logging Utilities
+## 2. Утилиты безопасного логирования
 
-Use the utilities in `api/utils/safe_logging.py`:
+Используйте утилиты из `api/utils/safe_logging.py`:
 
 ### `get_safe_error_code(error: Exception) -> str`
 
-Returns only the error type name without details.
+Возвращает только имя типа ошибки без деталей.
 
 ```python
 from utils.safe_logging import get_safe_error_code
@@ -65,13 +65,13 @@ from utils.safe_logging import get_safe_error_code
 try:
     scrape_url("https://example.com?token=secret123")
 except Exception as e:
-    # Logs only "ConnectionError" instead of full message
-    logger.error(f"Scraping failed: {get_safe_error_code(e)}")
+    # Логирует только "ConnectionError" вместо полного сообщения
+    logger.error(f"Скрапинг не удался: {get_safe_error_code(e)}")
 ```
 
 ### `sanitize_error_message(error: Exception) -> str`
 
-Returns error message with sensitive data redacted.
+Возвращает сообщение об ошибке с замененными конфиденциальными данными.
 
 ```python
 from utils.safe_logging import sanitize_error_message
@@ -79,171 +79,171 @@ from utils.safe_logging import sanitize_error_message
 try:
     verify_source(url)
 except Exception as e:
-    # Redacts tokens, emails, phones, API keys
+    # Заменяет токены, email, телефоны, API ключи
     safe_msg = sanitize_error_message(e)
-    logger.error(f"Verification failed: {safe_msg}")
+    logger.error(f"Проверка не удалась: {safe_msg}")
 ```
 
 ### `safe_log_dict(data: dict, max_length: int = 100) -> dict`
 
-Truncates long values for logging.
+Обрезает длинные значения для логирования.
 
 ```python
 from utils.safe_logging import safe_log_dict
 
-# Truncate long strings to prevent log spam
-logger.debug(f"Processing: {safe_log_dict(post_data)}")
+# Обрезать длинные строки для предотвращения спама в логах
+logger.debug(f"Обработка: {safe_log_dict(post_data)}")
 ```
 
-## 3. Raw Field in Posts
+## 3. Поле raw в постах
 
-The `raw` field in the `Post` model **MUST NOT** contain:
+Поле `raw` в модели `Post` **НЕ ДОЛЖНО** содержать:
 
-❌ **Prohibited data:**
-- Full API responses (may contain internal IDs, tokens)
-- User profile information (email, phone, real name)
-- Authentication tokens or session data
-- Private user data (location, IP address)
-- Complete message objects (use normalized fields instead)
+❌ **Запрещенные данные:**
+- Полные ответы API (могут содержать внутренние ID, токены)
+- Информацию о профиле пользователя (email, телефон, настоящее имя)
+- Токены аутентификации или данные сессии
+- Приватные данные пользователя (местоположение, IP адрес)
+- Полные объекты сообщений (используйте нормализованные поля вместо них)
 
-✅ **Allowed data:**
-- Non-sensitive metadata (post type, content format)
-- Public metrics (view count, like count)
-- Platform-specific IDs that are already public
-- Empty object `{}` (safest option for mock data)
+✅ **Разрешенные данные:**
+- Неконфиденциальные метаданные (тип поста, формат контента)
+- Публичные метрики (количество просмотров, лайков)
+- Платформенно-специфические ID, которые уже публичны
+- Пустой объект `{}` (самый безопасный вариант для тестовых данных)
 
-**Example:**
+**Пример:**
 ```python
-# ❌ WRONG - contains full API response
+# ❌ НЕПРАВИЛЬНО - содержит полный ответ API
 "raw": msg.to_dict()
 
-# ❌ WRONG - contains user profile
+# ❌ НЕПРАВИЛЬНО - содержит профиль пользователя
 "raw": {"author": user.profile.to_dict()}
 
-# ✅ CORRECT - empty or minimal metadata
+# ✅ ПРАВИЛЬНО - пустой или минимальные метаданные
 "raw": {}
 
-# ✅ CORRECT - only public metadata
+# ✅ ПРАВИЛЬНО - только публичные метаданные
 "raw": {"post_type": "photo", "is_pinned": True}
 ```
 
-## 4. Error Storage in Database
+## 4. Хранение ошибок в базе данных
 
-When storing errors in `source.meta` or `job.errors`:
+При хранении ошибок в `source.meta` или `job.errors`:
 
-✅ **DO:**
-- Store error codes: `PLATFORM_PRIVATE`, `INVALID_URL`
-- Store error types: `ConnectionError`, `ValueError`
-- Store timestamps: `error_time`
-- Store structured error objects with codes
+✅ **ПРАВИЛЬНО:**
+- Хранить коды ошибок: `PLATFORM_PRIVATE`, `INVALID_URL`
+- Хранить типы ошибок: `ConnectionError`, `ValueError`
+- Хранить временные метки: `error_time`
+- Хранить структурированные объекты ошибок с кодами
 
-❌ **DON'T:**
-- Store full exception messages
-- Store stack traces
-- Store URLs with authentication tokens
-- Store user input that may contain PII
+❌ **НЕПРАВИЛЬНО:**
+- Хранить полные сообщения об исключениях
+- Хранить stack traces
+- Хранить URL с токенами аутентификации
+- Хранить пользовательский ввод, который может содержать PII
 
-**Example:**
+**Пример:**
 ```python
-# ✅ CORRECT
+# ✅ ПРАВИЛЬНО
 source.meta = {
     'error_code': 'PLATFORM_PRIVATE',
     'error_type': 'PermissionError',
     'error_time': datetime.utcnow().isoformat()
 }
 
-# ❌ WRONG
+# ❌ НЕПРАВИЛЬНО
 source.meta = {
-    'error': str(e),  # May contain sensitive data
-    'traceback': traceback.format_exc()  # Exposes code paths
+    'error': str(e),  # Может содержать конфиденциальные данные
+    'traceback': traceback.format_exc()  # Раскрывает пути к коду
 }
 ```
 
-## 5. Celery Task Logging
+## 5. Логирование задач Celery
 
-Celery workers should follow the same rules:
+Celery workers должны следовать тем же правилам:
 
-✅ **DO:**
+✅ **ПРАВИЛЬНО:**
 ```python
-logger.info(f"Started scraping job {job_id}")
-logger.error(f"Job {job_id} failed: {get_safe_error_code(e)}")
+logger.info(f"Начат скрапинг задачи {job_id}")
+logger.error(f"Задача {job_id} не удалась: {get_safe_error_code(e)}")
 ```
 
-❌ **DON'T:**
+❌ **НЕПРАВИЛЬНО:**
 ```python
-logger.error(f"Job failed: {str(e)}", exc_info=True)  # Stack traces in production
-logger.debug(f"Processing posts: {posts}")  # May contain post content
+logger.error(f"Задача не удалась: {str(e)}", exc_info=True)  # Stack traces в продакшене
+logger.debug(f"Обработка постов: {posts}")  # Может содержать содержимое постов
 ```
 
-## 6. Environment-Specific Settings
+## 6. Настройки в зависимости от окружения
 
-### Development
-- Full error messages and stack traces are OK
-- Use `exc_info=True` for debugging
-- Log more details for troubleshooting
+### Development (разработка)
+- Полные сообщения об ошибках и stack traces допустимы
+- Используйте `exc_info=True` для отладки
+- Логируйте больше деталей для устранения неполадок
 
-### Production
-- **NEVER** use `exc_info=True`
-- Use `get_safe_error_code()` for all exceptions
-- Minimize log verbosity
-- Use structured logging with error codes
+### Production (продакшен)
+- **НИКОГДА** не используйте `exc_info=True`
+- Используйте `get_safe_error_code()` для всех исключений
+- Минимизируйте подробность логов
+- Используйте структурированное логирование с кодами ошибок
 
-**Conditional logging:**
+**Условное логирование:**
 ```python
 import os
 
 if os.getenv('ENV') == 'dev':
-    logger.error(f"Error: {e}", exc_info=True)
+    logger.error(f"Ошибка: {e}", exc_info=True)
 else:
-    logger.error(f"Error: {get_safe_error_code(e)}")
+    logger.error(f"Ошибка: {get_safe_error_code(e)}")
 ```
 
-## 7. Compliance & Auditing
+## 7. Соответствие нормативам и аудит
 
-### GDPR Compliance
-- Logs must not contain personal data
-- Post content is personal data and must not be logged
-- User handles/usernames are personal data
+### Соответствие GDPR
+- Логи не должны содержать персональные данные
+- Содержимое постов - это персональные данные и не должно логироваться
+- Хендлы/имена пользователей - это персональные данные
 
-### Security Auditing
-- Review logs before shipping to production
-- Use `grep` to search for potential leaks:
+### Аудит безопасности
+- Проверяйте логи перед деплоем в продакшен
+- Используйте `grep` для поиска потенциальных утечек:
   ```bash
-  # Search for email patterns
+  # Поиск паттернов email
   grep -r '@[a-zA-Z0-9]' logs/
 
-  # Search for phone numbers
+  # Поиск номеров телефонов
   grep -r '+[0-9]' logs/
 
-  # Search for tokens
+  # Поиск токенов
   grep -r 'token=' logs/
   ```
 
-## 8. Code Review Checklist
+## 8. Чеклист для code review
 
-Before merging code, verify:
+Перед мержем кода, проверьте:
 
-- [ ] No `str(e)` or `{e}` in production log statements
-- [ ] No post content in logs (`post_data['text']`)
-- [ ] No URLs in logs (may contain tokens)
-- [ ] No `exc_info=True` without environment check
-- [ ] `raw` field contains only non-sensitive metadata
-- [ ] Error storage uses codes, not full messages
-- [ ] All scrapers use `get_safe_error_code()`
+- [ ] Нет `str(e)` или `{e}` в продакшен log statements
+- [ ] Нет содержимого постов в логах (`post_data['text']`)
+- [ ] Нет URL в логах (могут содержать токены)
+- [ ] Нет `exc_info=True` без проверки окружения
+- [ ] Поле `raw` содержит только неконфиденциальные метаданные
+- [ ] Хранение ошибок использует коды, а не полные сообщения
+- [ ] Все скраперы используют `get_safe_error_code()`
 
-## 9. Incident Response
+## 9. Реагирование на инциденты
 
-If sensitive data is logged:
+Если конфиденциальные данные попали в логи:
 
-1. **Immediately rotate** any exposed tokens/keys
-2. **Purge logs** containing sensitive data
-3. **Update code** to use safe logging utilities
-4. **Audit** similar code paths for same issue
-5. **Document** the incident and prevention steps
+1. **Немедленно ротируйте** любые раскрытые токены/ключи
+2. **Очистите логи**, содержащие конфиденциальные данные
+3. **Обновите код**, чтобы использовать утилиты безопасного логирования
+4. **Проверьте** похожие части кода на ту же проблему
+5. **Задокументируйте** инцидент и шаги по предотвращению
 
-## 10. References
+## 10. Справочные материалы
 
-- `api/utils/safe_logging.py` - Safe logging utilities
-- `api/tasks/scraping_tasks.py` - Example of safe Celery logging
-- `api/services/scraping_service.py` - Example of safe service logging
-- `api/scrapers/` - Example of safe scraper data handling
+- `api/utils/safe_logging.py` - Утилиты безопасного логирования
+- `api/tasks/scraping_tasks.py` - Пример безопасного логирования Celery
+- `api/services/scraping_service.py` - Пример безопасного логирования сервиса
+- `api/scrapers/` - Пример безопасной обработки данных скрапера

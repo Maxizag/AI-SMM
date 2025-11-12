@@ -1,69 +1,69 @@
-# Telegram Scraper Reliability Features
+# Функции надежности Telegram скрапера
 
-This document describes the reliability and error handling features in the Telegram scraper.
+Этот документ описывает функции надежности и обработки ошибок в Telegram скрапере.
 
-## Overview
+## Обзор
 
-The Telegram scraper includes robust error handling, retry mechanisms, timeout protection, and progress tracking to ensure reliable operation even under challenging conditions.
+Telegram скрапер включает надежную обработку ошибок, механизмы повторных попыток, защиту от таймаутов и отслеживание прогресса для обеспечения надежной работы даже в сложных условиях.
 
-## Features
+## Функции
 
-### 1. Automatic Retry with Exponential Backoff
+### 1. Автоматические повторные попытки с экспоненциальной задержкой
 
-All critical operations automatically retry on failures:
+Все критические операции автоматически повторяются при сбоях:
 
-- **Network errors**: Retry with exponential backoff (1s, 2s, 4s)
-- **Timeout errors**: Retry up to 3 times
-- **Generic errors**: Retry without delay
+- **Сетевые ошибки**: Повтор с экспоненциальной задержкой (1с, 2с, 4с)
+- **Ошибки таймаута**: Повтор до 3 раз
+- **Общие ошибки**: Повтор без задержки
 
 ```python
 @retry_on_error(max_attempts=3, delay=1.0)
 async def verify(self):
-    # Automatically retries on failure
+    # Автоматически повторяется при сбое
     pass
 ```
 
-**Applied to:**
-- `verify()` - Channel verification
-- `scrape()` - Post scraping
-- `_download_and_upload_photo()` - Photo downloads
-- `_download_and_upload_video()` - Video downloads
-- `_download_and_upload_document()` - Document downloads
+**Применяется к:**
+- `verify()` - Проверка канала
+- `scrape()` - Скрапинг постов
+- `_download_and_upload_photo()` - Загрузка фотографий
+- `_download_and_upload_video()` - Загрузка видео
+- `_download_and_upload_document()` - Загрузка документов
 
-### 2. FloodWaitError Handling
+### 2. Обработка FloodWaitError
 
-Telegram rate limits are handled gracefully:
+Ограничения скорости Telegram обрабатываются корректно:
 
 ```python
 except FloodWaitError as e:
     wait_time = e.seconds
-    if wait_time > 300:  # More than 5 minutes
-        logger.warning(f"FloodWait too long ({wait_time}s), skipping")
+    if wait_time > 300:  # Больше 5 минут
+        logger.warning(f"FloodWait слишком долгий ({wait_time}с), пропускаем")
         raise
 
-    logger.info(f"FloodWait: waiting {wait_time}s")
+    logger.info(f"FloodWait: ожидание {wait_time}с")
     await asyncio.sleep(wait_time)
 ```
 
-**Behavior:**
-- Waits exactly as long as Telegram requires
-- Skips operation if wait time exceeds 5 minutes
-- Logs wait time for monitoring
-- Automatically continues after wait
+**Поведение:**
+- Ожидает ровно столько, сколько требует Telegram
+- Пропускает операцию, если время ожидания превышает 5 минут
+- Логирует время ожидания для мониторинга
+- Автоматически продолжает после ожидания
 
-### 3. Timeout Protection
+### 3. Защита от таймаутов
 
-All network operations have timeouts to prevent hanging:
+Все сетевые операции имеют таймауты для предотвращения зависания:
 
-| Operation | Timeout | Reason |
-|-----------|---------|--------|
-| Client start | 30s | Initial connection |
-| Get entity | 15s | Channel lookup |
-| Get messages | 60s | Message fetching |
-| Photo download | 120s (2 min) | Image files |
-| Video download | 300s (5 min) | Large video files |
-| Audio/voice download | 180s (3 min) | Audio files |
-| Document download | 300s (5 min) | Large documents |
+| Операция | Таймаут | Причина |
+|----------|---------|---------|
+| Запуск клиента | 30с | Начальное подключение |
+| Получение entity | 15с | Поиск канала |
+| Получение сообщений | 60с | Загрузка сообщений |
+| Загрузка фото | 120с (2 мин) | Изображения |
+| Загрузка видео | 300с (5 мин) | Большие видеофайлы |
+| Загрузка аудио/голоса | 180с (3 мин) | Аудиофайлы |
+| Загрузка документов | 300с (5 мин) | Большие документы |
 
 ```python
 await with_timeout(
@@ -72,119 +72,119 @@ await with_timeout(
 )
 ```
 
-### 4. Progress Tracking
+### 4. Отслеживание прогресса
 
-Real-time progress updates during scraping:
+Обновления прогресса в реальном времени во время скрапинга:
 
 ```python
 def progress_callback(current: int, total: int):
     percentage = (current / total) * 100
-    print(f"Progress: {current}/{total} ({percentage:.1f}%)")
+    print(f"Прогресс: {current}/{total} ({percentage:.1f}%)")
 
 scraper = TelegramScraper(url, progress_callback=progress_callback)
 posts = await scraper.scrape(limit=200)
 ```
 
-**Features:**
-- Called for each processed message
-- Includes current and total counts
-- Can be used for UI updates, progress bars, or logging
-- Errors in callback don't stop scraping
+**Возможности:**
+- Вызывается для каждого обработанного сообщения
+- Включает текущий и общий счетчики
+- Может использоваться для обновления UI, прогресс-баров или логирования
+- Ошибки в callback не останавливают скрапинг
 
-### 5. Size Limits
+### 5. Лимиты размера файлов
 
-File size limits prevent memory issues and long downloads:
+Ограничения размера файлов предотвращают проблемы с памятью и долгие загрузки:
 
-| Media Type | Size Limit | Reason |
-|------------|------------|--------|
-| Videos | 50 MB | Large files take too long |
-| Documents | 100 MB | Balance between size and utility |
-| Audio/Voice | 20 MB | Typically smaller files |
+| Тип медиа | Лимит размера | Причина |
+|-----------|---------------|---------|
+| Видео | 50 МБ | Большие файлы загружаются слишком долго |
+| Документы | 100 МБ | Баланс между размером и полезностью |
+| Аудио/Голос | 20 МБ | Обычно меньшие файлы |
 
 ```python
-if file_size > 50 * 1024 * 1024:  # 50MB
-    logger.warning(f"Video too large: {file_size} bytes, skipping")
+if file_size > 50 * 1024 * 1024:  # 50МБ
+    logger.warning(f"Видео слишком большое: {file_size} байт, пропускаем")
     return None
 ```
 
-### 6. Logging and Monitoring
+### 6. Логирование и мониторинг
 
-Comprehensive logging for monitoring and debugging:
+Комплексное логирование для мониторинга и отладки:
 
 ```python
-# Progress logging every 50 messages
+# Логирование прогресса каждые 50 сообщений
 if i % 50 == 0:
-    logger.info(f"Progress: {i}/{total_messages} messages processed")
+    logger.info(f"Прогресс: {i}/{total_messages} сообщений обработано")
 
-# Error logging (security-safe)
-logger.error(f"Download error: {get_safe_error_code(e)}")
+# Логирование ошибок (безопасно для безопасности)
+logger.error(f"Ошибка загрузки: {get_safe_error_code(e)}")
 ```
 
-**Log levels:**
-- `INFO`: Normal operation, progress updates
-- `WARNING`: Recoverable errors, skipped operations
-- `ERROR`: Failed operations, exceptions
+**Уровни логов:**
+- `INFO`: Нормальная работа, обновления прогресса
+- `WARNING`: Восстановимые ошибки, пропущенные операции
+- `ERROR`: Неудачные операции, исключения
 
-**Security:**
-- No PII in logs
-- No URLs with tokens
-- Only error types logged (not full messages)
+**Безопасность:**
+- Нет PII в логах
+- Нет URL с токенами
+- Только типы ошибок (не полные сообщения)
 
-## Error Handling Strategies
+## Стратегии обработки ошибок
 
-### Network Errors
+### Сетевые ошибки
 
-**Problem:** Intermittent network connectivity, temporary server issues
+**Проблема:** Периодические проблемы с сетью, временные проблемы с сервером
 
-**Solution:**
-- Retry up to 3 times with exponential backoff
-- Log each retry attempt
-- Fail gracefully after max attempts
+**Решение:**
+- Повтор до 3 раз с экспоненциальной задержкой
+- Логирование каждой попытки
+- Корректный выход после максимального числа попыток
 
-### Rate Limiting (FloodWait)
+### Ограничение скорости (FloodWait)
 
-**Problem:** Telegram enforces rate limits on API requests
+**Проблема:** Telegram применяет ограничения скорости к API запросам
 
-**Solution:**
-- Automatically wait exactly as long as required
-- Continue seamlessly after wait
-- Skip if wait time is excessive (>5 minutes)
+**Решение:**
+- Автоматическое ожидание ровно столько, сколько требуется
+- Бесшовное продолжение после ожидания
+- Пропуск, если время ожидания слишком большое (>5 минут)
 
-### Timeouts
+### Таймауты
 
-**Problem:** Operations hang indefinitely on slow networks
+**Проблема:** Операции зависают бесконечно на медленных сетях
 
-**Solution:**
-- All network operations have timeouts
-- Longer timeouts for larger files
-- Retry after timeout (via retry mechanism)
+**Решение:**
+- Все сетевые операции имеют таймауты
+- Более длинные таймауты для больших файлов
+- Повтор после таймаута (через механизм retry)
 
-### Large Files
+### Большие файлы
 
-**Problem:** Large media files consume memory and bandwidth
+**Проблема:** Большие медиафайлы потребляют память и трафик
 
-**Solution:**
-- Size limits based on media type
-- Skip files exceeding limits
-- Log skipped files for monitoring
+**Решение:**
+- Лимиты размера в зависимости от типа медиа
+- Пропуск файлов, превышающих лимиты
+- Логирование пропущенных файлов для мониторинга
 
-### Missing Media
+### Отсутствующее медиа
 
-**Problem:** Some messages have broken or unavailable media
+**Проблема:** Некоторые сообщения имеют сломанное или недоступное медиа
 
-**Solution:**
-- Try to download, catch errors
-- Log error (safe error code only)
-- Continue with remaining messages
-- Return partial results
+**Решение:**
+- Попытка загрузки, перехват ошибок
+- Логирование ошибки (только безопасный код ошибки)
+- Продолжение с оставшимися сообщениями
+- Возврат частичных результатов
 
-## Usage Examples
+## Примеры использования
 
-### Basic Usage with Progress
+### Базовое использование с прогрессом
 
 ```python
 def show_progress(current, total):
-    print(f"\rProcessing: {current}/{total}", end='', flush=True)
+    print(f"\rОбработка: {current}/{total}", end='', flush=True)
 
 scraper = TelegramScraper(
     "https://t.me/channel",
@@ -193,30 +193,30 @@ scraper = TelegramScraper(
 
 try:
     posts = await scraper.scrape(limit=500)
-    print(f"\n✅ Successfully scraped {len(posts)} posts")
+    print(f"\n✅ Успешно скраплено {len(posts)} постов")
 except Exception as e:
-    print(f"\n❌ Scraping failed: {e}")
+    print(f"\n❌ Скрапинг не удался: {e}")
 ```
 
-### Handling Large Channels
+### Обработка больших каналов
 
 ```python
-# For channels with 1000+ posts
+# Для каналов с 1000+ постов
 scraper = TelegramScraper("https://t.me/largechannel")
 
-# Scrape in batches
+# Скрапинг батчами
 batch_size = 200
 for offset in range(0, 1000, batch_size):
     try:
         posts = await scraper.scrape(limit=batch_size)
-        # Process batch
+        # Обработка батча
         save_to_database(posts)
     except FloodWaitError as e:
-        print(f"Rate limited, waiting {e.seconds}s...")
+        print(f"Ограничение скорости, ожидание {e.seconds}с...")
         await asyncio.sleep(e.seconds)
 ```
 
-### With Timeout Protection
+### С защитой от таймаута
 
 ```python
 import asyncio
@@ -224,27 +224,27 @@ import asyncio
 scraper = TelegramScraper("https://t.me/channel")
 
 try:
-    # Overall timeout for entire scraping operation
+    # Общий таймаут для всей операции скрапинга
     posts = await asyncio.wait_for(
         scraper.scrape(limit=100),
-        timeout=600.0  # 10 minutes max
+        timeout=600.0  # Максимум 10 минут
     )
 except asyncio.TimeoutError:
-    print("Scraping took too long, aborting")
+    print("Скрапинг занял слишком много времени, прерываем")
 ```
 
-## Best Practices
+## Лучшие практики
 
-### 1. Use Progress Callbacks
+### 1. Используйте progress callbacks
 
-Always provide a progress callback for long-running scrapes:
-- Improves UX with visual feedback
-- Helps diagnose stuck operations
-- Allows for responsive UI updates
+Всегда предоставляйте progress callback для длительных скрапингов:
+- Улучшает UX с визуальной обратной связью
+- Помогает диагностировать зависшие операции
+- Позволяет обновлять UI
 
-### 2. Handle FloodWait Gracefully
+### 2. Корректно обрабатывайте FloodWait
 
-When scraping multiple channels:
+При скрапинге нескольких каналов:
 ```python
 for channel in channels:
     try:
@@ -252,115 +252,115 @@ for channel in channels:
     except FloodWaitError as e:
         if e.seconds < 300:
             await asyncio.sleep(e.seconds)
-            # Retry after wait
+            # Повтор после ожидания
         else:
-            # Skip and move to next channel
+            # Пропуск и переход к следующему каналу
             continue
 ```
 
-### 3. Monitor Logs
+### 3. Мониторьте логи
 
-Set up log monitoring to track:
-- Retry attempts (may indicate network issues)
-- FloodWait occurrences (may need to reduce rate)
-- Skipped large files (adjust limits if needed)
-- Timeout errors (may need longer timeouts)
+Настройте мониторинг логов для отслеживания:
+- Попыток повтора (могут указывать на сетевые проблемы)
+- Частоты FloodWait (может потребоваться снизить скорость)
+- Пропущенных больших файлов (нужно настроить лимиты)
+- Ошибок таймаута (могут потребоваться более длинные таймауты)
 
-### 4. Implement Graceful Degradation
+### 4. Реализуйте graceful degradation
 
-Don't fail entire scrape on single errors:
+Не прерывайте весь скрапинг из-за единичных ошибок:
 ```python
 posts = await scraper.scrape(limit=100)
-# Returns all successfully scraped posts
-# Even if some failed or were skipped
+# Возвращает все успешно скрапленные посты
+# Даже если некоторые не удались или были пропущены
 ```
 
-### 5. Use Appropriate Timeouts
+### 5. Используйте подходящие таймауты
 
-Adjust timeouts based on your environment:
-- Fast networks: Use shorter timeouts
-- Slow/mobile networks: Use longer timeouts
-- Large files expected: Increase document/video timeouts
+Настраивайте таймауты в зависимости от окружения:
+- Быстрые сети: Используйте более короткие таймауты
+- Медленные/мобильные сети: Используйте более длинные таймауты
+- Ожидаются большие файлы: Увеличьте таймауты для документов/видео
 
-## Troubleshooting
+## Устранение неполадок
 
-### "FloodWait too long" Errors
+### Ошибки "FloodWait слишком долгий"
 
-**Cause:** Making too many requests too quickly
+**Причина:** Слишком много запросов слишком быстро
 
-**Solutions:**
-- Reduce scraping frequency
-- Add delays between requests
-- Use smaller batch sizes
-- Spread scraping across multiple accounts
+**Решения:**
+- Уменьшите частоту скрапинга
+- Добавьте задержки между запросами
+- Используйте меньшие размеры батчей
+- Распределите скрапинг между несколькими аккаунтами
 
-### Frequent Timeout Errors
+### Частые ошибки таймаута
 
-**Cause:** Slow network, server issues, or too-short timeouts
+**Причина:** Медленная сеть, проблемы с сервером или слишком короткие таймауты
 
-**Solutions:**
-- Check network connectivity
-- Increase timeout values
-- Reduce concurrent operations
-- Try at different times
+**Решения:**
+- Проверьте подключение к сети
+- Увеличьте значения таймаутов
+- Уменьшите количество одновременных операций
+- Попробуйте в другое время
 
-### Many Skipped Large Files
+### Много пропущенных больших файлов
 
-**Cause:** Channel has many videos/files exceeding limits
+**Причина:** Канал имеет много видео/файлов, превышающих лимиты
 
-**Solutions:**
-- Increase size limits if needed
-- Download large files separately
-- Use dedicated download sessions
-- Filter by media type before downloading
+**Решения:**
+- Увеличьте лимиты размера при необходимости
+- Загружайте большие файлы отдельно
+- Используйте выделенные сессии загрузки
+- Фильтруйте по типу медиа перед загрузкой
 
-### High Retry Counts
+### Высокое количество повторов
 
-**Cause:** Unreliable network or server issues
+**Причина:** Ненадежная сеть или проблемы с сервером
 
-**Solutions:**
-- Check network stability
-- Increase max retry attempts
-- Add longer delays between retries
-- Schedule scraping during off-peak hours
+**Решения:**
+- Проверьте стабильность сети
+- Увеличьте максимальное количество попыток
+- Добавьте более длинные задержки между повторами
+- Планируйте скрапинг в непиковые часы
 
-## Performance Tuning
+## Настройка производительности
 
-### For Fast Scraping
+### Для быстрого скрапинга
 
 ```python
-# Shorter timeouts, less retries
+# Более короткие таймауты, меньше повторов
 @retry_on_error(max_attempts=2, delay=0.5)
 ```
 
-### For Reliability
+### Для надежности
 
 ```python
-# Longer timeouts, more retries
+# Более длинные таймауты, больше повторов
 @retry_on_error(max_attempts=5, delay=2.0)
 ```
 
-### For Limited Bandwidth
+### Для ограниченной пропускной способности
 
 ```python
-# Lower size limits
-video_limit = 20 * 1024 * 1024  # 20MB instead of 50MB
-document_limit = 50 * 1024 * 1024  # 50MB instead of 100MB
+# Более низкие лимиты размера
+video_limit = 20 * 1024 * 1024  # 20МБ вместо 50МБ
+document_limit = 50 * 1024 * 1024  # 50МБ вместо 100МБ
 ```
 
-## Monitoring and Metrics
+## Мониторинг и метрики
 
-Key metrics to track:
+Ключевые метрики для отслеживания:
 
-1. **Success Rate**: Percentage of successful scrapes
-2. **Retry Rate**: How often operations need retries
-3. **FloodWait Frequency**: How often rate limited
-4. **Average Scrape Time**: Duration of scraping operations
-5. **Media Skip Rate**: Percentage of media files skipped
+1. **Success Rate**: Процент успешных скрапингов
+2. **Retry Rate**: Как часто операции требуют повторов
+3. **FloodWait Frequency**: Как часто применяется ограничение скорости
+4. **Average Scrape Time**: Длительность операций скрапинга
+5. **Media Skip Rate**: Процент пропущенных медиафайлов
 
-Example logging:
+Пример логирования:
 ```python
-logger.info(f"Scraped {len(posts)}/{limit} posts in {duration:.1f}s")
-logger.info(f"Media: {photos} photos, {videos} videos, {skipped} skipped")
-logger.info(f"Retries: {retry_count}, FloodWaits: {floodwait_count}")
+logger.info(f"Скраплено {len(posts)}/{limit} постов за {duration:.1f}с")
+logger.info(f"Медиа: {photos} фото, {videos} видео, {skipped} пропущено")
+logger.info(f"Повторы: {retry_count}, FloodWaits: {floodwait_count}")
 ```

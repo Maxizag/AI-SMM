@@ -1,34 +1,34 @@
-# Telegram Scraper Setup Guide
+# Руководство по настройке Telegram скрапера
 
-## Overview
+## Обзор
 
-The Telegram scraper uses **Telethon** (user-bot client) to scrape public channels and groups. It downloads media files and uploads them to S3 for storage.
+Telegram скрапер использует **Telethon** (клиент user-bot) для скрапинга публичных каналов и групп. Он скачивает медиафайлы и загружает их в S3 для хранения.
 
-## Prerequisites
+## Предварительные требования
 
-1. **Telegram API credentials** from https://my.telegram.org/apps
-2. **AWS S3 bucket** for media storage
-3. **Telethon** and **boto3** installed (already in requirements.txt)
+1. **API credentials Telegram** с https://my.telegram.org/apps
+2. **AWS S3 bucket** для хранения медиа
+3. **Telethon** и **boto3** установлены (уже в requirements.txt)
 
-## Step 1: Get Telegram API Credentials
+## Шаг 1: Получение API credentials Telegram
 
-### 1.1 Go to https://my.telegram.org/apps
+### 1.1 Перейдите на https://my.telegram.org/apps
 
-### 1.2 Login with your phone number
+### 1.2 Войдите с помощью номера телефона
 
-### 1.3 Create a new application:
+### 1.3 Создайте новое приложение:
 - **App title**: AI-SMM Scraper
 - **Short name**: aismm
 - **Platform**: Other
 - **Description**: Content scraper for AI-SMM
 
-### 1.4 Copy your credentials:
+### 1.4 Скопируйте ваши credentials:
 - **api_id**: 12345678
 - **api_hash**: abcdef1234567890abcdef1234567890
 
-## Step 2: Configure Environment Variables
+## Шаг 2: Настройка переменных окружения
 
-Add to `.env`:
+Добавьте в `.env`:
 
 ```bash
 # Telegram Scraper (Telethon)
@@ -37,15 +37,15 @@ TELEGRAM_API_HASH=abcdef1234567890abcdef1234567890
 TELEGRAM_SESSION_NAME=aismm_scraper
 ```
 
-## Step 3: Setup AWS S3
+## Шаг 3: Настройка AWS S3
 
-### 3.1 Create S3 Bucket
+### 3.1 Создайте S3 Bucket
 
 ```bash
 aws s3 mb s3://aismm-media --region us-east-1
 ```
 
-### 3.2 Configure bucket policy for public access (optional):
+### 3.2 Настройте bucket policy для публичного доступа (опционально):
 
 ```json
 {
@@ -62,7 +62,7 @@ aws s3 mb s3://aismm-media --region us-east-1
 }
 ```
 
-### 3.3 Add AWS credentials to `.env`:
+### 3.3 Добавьте AWS credentials в `.env`:
 
 ```bash
 # AWS S3 for Media Storage
@@ -72,28 +72,28 @@ AWS_S3_BUCKET=aismm-media
 AWS_S3_REGION=us-east-1
 ```
 
-## Step 4: First Run (Session Authentication)
+## Шаг 4: Первый запуск (аутентификация сессии)
 
-On the first run, Telethon will create a session file and may ask for phone verification:
+При первом запуске Telethon создаст файл сессии и может запросить верификацию по телефону:
 
 ```bash
-# Run in Docker or locally
+# Запуск в Docker или локально
 python -c "from scrapers.telegram import TelegramScraper; import asyncio; asyncio.run(TelegramScraper('https://t.me/channel').verify())"
 ```
 
-**You may be prompted to:**
-1. Enter your phone number: `+1234567890`
-2. Enter verification code: `12345`
-3. Enter 2FA password (if enabled)
+**Вас могут попросить:**
+1. Ввести номер телефона: `+1234567890`
+2. Ввести код верификации: `12345`
+3. Ввести пароль 2FA (если включен)
 
-**Session file location:**
-- The session will be saved as `aismm_scraper.session`
-- This file contains authentication data and should NOT be committed to git
-- Add `*.session` to `.gitignore`
+**Расположение файла сессии:**
+- Сессия будет сохранена как `aismm_scraper.session`
+- Этот файл содержит данные аутентификации и НЕ должен быть закоммичен в git
+- Добавьте `*.session` в `.gitignore`
 
-## Step 5: Verify Setup
+## Шаг 5: Проверка настройки
 
-Test the scraper with a public channel:
+Протестируйте скрапер с публичным каналом:
 
 ```bash
 curl -X POST http://localhost:8000/sources/verify \
@@ -104,7 +104,7 @@ curl -X POST http://localhost:8000/sources/verify \
   }'
 ```
 
-Expected response:
+Ожидаемый ответ:
 ```json
 {
   "handle": "@durov",
@@ -117,153 +117,153 @@ Expected response:
 }
 ```
 
-## Features
+## Возможности
 
-### ✅ Supported
+### ✅ Поддерживается
 
-- **Public channels** - scrape any public Telegram channel
-- **Message text** - full post content
-- **Photos** - download and upload to S3
-- **Videos** - download (up to 50MB) and upload to S3
-- **Metrics**:
-  - Views count
-  - Forwards count
-  - Comments/replies count
-- **URL formats**:
+- **Публичные каналы** - скрапинг любого публичного Telegram канала
+- **Текст сообщений** - полное содержимое постов
+- **Фотографии** - скачивание и загрузка в S3
+- **Видео** - скачивание (до 50МБ) и загрузка в S3
+- **Метрики**:
+  - Количество просмотров
+  - Количество пересылок
+  - Количество комментариев/ответов
+- **Форматы URL**:
   - `https://t.me/channel`
   - `t.me/channel`
   - `@channel`
   - `channel`
 
-### ❌ Not Supported (yet)
+### ❌ Не поддерживается (пока)
 
-- Private channels (requires invitation/access)
-- Groups (can be added easily)
+- Приватные каналы (требуется приглашение/доступ)
+- Группы (можно легко добавить)
 - Stories
-- Polls
-- Large videos (>50MB) - skipped to avoid memory issues
+- Опросы
+- Большие видео (>50МБ) - пропускаются для избежания проблем с памятью
 
-## Architecture
+## Архитектура
 
 ```
 ┌──────────────────┐
 │  TelegramScraper │
 └────────┬─────────┘
          │
-         ├─→ verify() ────→ Check channel accessibility
-         │                  Get post count
-         │                  Detect private status
+         ├─→ verify() ────→ Проверка доступности канала
+         │                  Получение количества постов
+         │                  Определение приватного статуса
          │
-         └─→ scrape() ────→ Fetch last N messages (default: 200)
+         └─→ scrape() ────→ Получение последних N сообщений (по умолчанию: 200)
                             │
-                            ├─→ Download photos ──→ Upload to S3
-                            ├─→ Download videos ──→ Upload to S3
+                            ├─→ Скачивание фотографий ──→ Загрузка в S3
+                            ├─→ Скачивание видео ──→ Загрузка в S3
                             │
-                            └─→ Return normalized posts
+                            └─→ Возврат нормализованных постов
 ```
 
-## Media Storage
+## Хранение медиа
 
-Media files are stored in S3 with the following structure:
+Медиафайлы хранятся в S3 со следующей структурой:
 
 ```
 s3://aismm-media/
   └── telegram/
       └── channel_name/
-          ├── abc123.jpg    (photo)
-          ├── def456.jpg    (photo)
-          └── xyz789.mp4    (video)
+          ├── abc123.jpg    (фото)
+          ├── def456.jpg    (фото)
+          └── xyz789.mp4    (видео)
 ```
 
-**File naming:**
-- Random UUID to prevent collisions
-- Original file extension preserved
-- Content-Type detected automatically
+**Именование файлов:**
+- Случайный UUID для предотвращения коллизий
+- Оригинальное расширение файла сохраняется
+- Content-Type определяется автоматически
 
-## Rate Limits
+## Ограничения скорости
 
-Telegram has rate limits for API requests:
+Telegram имеет ограничения скорости для API запросов:
 
-- **Verification**: ~30 requests/minute
-- **Message fetching**: ~20 requests/minute
-- **Media download**: Depends on file size
+- **Верификация**: ~30 запросов/минуту
+- **Получение сообщений**: ~20 запросов/минуту
+- **Скачивание медиа**: Зависит от размера файла
 
-**Best practices:**
-- Add delays between requests
-- Use batch operations when possible
-- Handle `FloodWaitError` with exponential backoff
+**Лучшие практики:**
+- Добавляйте задержки между запросами
+- Используйте батч-операции когда возможно
+- Обрабатывайте `FloodWaitError` с экспоненциальной задержкой
 
-## Error Handling
+## Обработка ошибок
 
-The scraper handles common errors:
+Скрапер обрабатывает распространенные ошибки:
 
-| Error | Description | Action |
-|-------|-------------|--------|
-| `ChannelPrivateError` | Channel is private | Return `CLOSED` status |
-| `ChannelInvalidError` | Channel doesn't exist | Return `INVALID_URL` status |
-| `UsernameNotOccupiedError` | Username not found | Return `INVALID_URL` status |
-| `FloodWaitError` | Rate limit exceeded | Wait and retry |
+| Ошибка | Описание | Действие |
+|--------|----------|----------|
+| `ChannelPrivateError` | Канал приватный | Возврат статуса `CLOSED` |
+| `ChannelInvalidError` | Канал не существует | Возврат статуса `INVALID_URL` |
+| `UsernameNotOccupiedError` | Имя пользователя не найдено | Возврат статуса `INVALID_URL` |
+| `FloodWaitError` | Превышен лимит скорости | Ожидание и повтор |
 
-All errors are logged with only error type (security: no PII in logs).
+Все ошибки логируются только с типом ошибки (безопасность: нет PII в логах).
 
-## Security
+## Безопасность
 
-### ✅ Safe
+### ✅ Безопасно
 
-- **Logs**: Only error types, no URLs or content
-- **Session file**: Encrypted by Telethon
-- **S3 URLs**: Stored as `s3://...` not HTTPS
-- **Raw field**: Empty `{}` (no full message data)
+- **Логи**: Только типы ошибок, никаких URL или контента
+- **Файл сессии**: Зашифрован Telethon
+- **S3 URLs**: Хранятся как `s3://...`, а не HTTPS
+- **Поле Raw**: Пустое `{}` (нет полных данных сообщения)
 
-### ⚠️ Important
+### ⚠️ Важно
 
-- **DO NOT** commit `.session` files
-- **DO NOT** log full error messages (may contain URLs)
-- **DO NOT** store user handles in logs (PII)
+- **НЕ** коммитьте файлы `.session`
+- **НЕ** логируйте полные сообщения об ошибках (могут содержать URL)
+- **НЕ** храните хендлы пользователей в логах (PII)
 
-Add to `.gitignore`:
+Добавьте в `.gitignore`:
 ```
 *.session
 *.session-journal
 ```
 
-## Troubleshooting
+## Устранение неполадок
 
-### Issue: "Telegram API credentials not configured"
+### Проблема: "Telegram API credentials not configured"
 
-**Solution**: Check `.env` file has `TELEGRAM_API_ID` and `TELEGRAM_API_HASH`
+**Решение**: Проверьте, что в файле `.env` есть `TELEGRAM_API_ID` и `TELEGRAM_API_HASH`
 
-### Issue: "Channel is private or unavailable"
+### Проблема: "Channel is private or unavailable"
 
-**Solution**:
-1. Check if channel is public
-2. Verify you have access to the channel
-3. Try with a different channel (e.g., `@durov`)
+**Решение**:
+1. Проверьте, является ли канал публичным
+2. Убедитесь, что у вас есть доступ к каналу
+3. Попробуйте с другим каналом (например, `@durov`)
 
-### Issue: "AWS credentials not configured"
+### Проблема: "AWS credentials not configured"
 
-**Solution**:
-1. Create AWS IAM user with S3 access
-2. Add credentials to `.env`
-3. Test with: `aws s3 ls s3://aismm-media/`
+**Решение**:
+1. Создайте AWS IAM пользователя с доступом к S3
+2. Добавьте credentials в `.env`
+3. Протестируйте с помощью: `aws s3 ls s3://aismm-media/`
 
-### Issue: "FloodWaitError: A wait of X seconds is required"
+### Проблема: "FloodWaitError: A wait of X seconds is required"
 
-**Solution**:
-- Telegram is rate limiting your requests
-- Wait X seconds before retrying
-- Reduce scraping frequency
+**Решение**:
+- Telegram ограничивает скорость ваших запросов
+- Подождите X секунд перед повторной попыткой
+- Уменьшите частоту скрапинга
 
-### Issue: "Session file permission denied"
+### Проблема: "Session file permission denied"
 
-**Solution**:
+**Решение**:
 ```bash
 chmod 600 *.session
 ```
 
-## Testing
+## Тестирование
 
-### Test verification:
+### Тест верификации:
 
 ```python
 from scrapers.telegram import TelegramScraper
@@ -277,7 +277,7 @@ async def test():
 asyncio.run(test())
 ```
 
-### Test scraping:
+### Тест скрапинга:
 
 ```python
 from scrapers.telegram import TelegramScraper
@@ -286,27 +286,27 @@ import asyncio
 async def test():
     scraper = TelegramScraper("https://t.me/durov")
     posts = await scraper.scrape(limit=10)
-    print(f"Scraped {len(posts)} posts")
+    print(f"Скраплено {len(posts)} постов")
     for post in posts[:3]:
         print(f"- {post['text'][:50]}...")
 
 asyncio.run(test())
 ```
 
-## Production Checklist
+## Чеклист для продакшена
 
-- [ ] Telegram API credentials configured
-- [ ] AWS S3 bucket created and configured
-- [ ] `.session` files in `.gitignore`
-- [ ] Session file created (first run authentication)
-- [ ] Tested with public channel
-- [ ] Error handling verified
-- [ ] Rate limits configured
-- [ ] Monitoring/logging setup
-- [ ] Backup session file (encrypted)
+- [ ] Telegram API credentials настроены
+- [ ] AWS S3 bucket создан и настроен
+- [ ] Файлы `.session` в `.gitignore`
+- [ ] Файл сессии создан (аутентификация при первом запуске)
+- [ ] Протестировано с публичным каналом
+- [ ] Обработка ошибок проверена
+- [ ] Лимиты скорости настроены
+- [ ] Настроен мониторинг/логирование
+- [ ] Резервная копия файла сессии (зашифрована)
 
-## Resources
+## Ресурсы
 
-- Telethon documentation: https://docs.telethon.dev/
+- Документация Telethon: https://docs.telethon.dev/
 - Telegram API: https://my.telegram.org/apps
-- AWS S3 docs: https://docs.aws.amazon.com/s3/
+- Документация AWS S3: https://docs.aws.amazon.com/s3/
