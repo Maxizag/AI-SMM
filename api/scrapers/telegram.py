@@ -23,6 +23,7 @@ from telethon.errors import (
 from scrapers.base import BaseScraper
 from config import get_settings
 from utils.s3_storage import get_s3_storage
+from utils.local_media_storage import get_local_storage
 from utils.safe_logging import get_safe_error_code
 
 logger = logging.getLogger(__name__)
@@ -232,22 +233,29 @@ class TelegramScraper(BaseScraper):
             posts = []
 
             # Try to use S3 if configured, otherwise use local storage
-            s3_storage = None
+            storage = None
+            storage_type = "none"
             try:
                 if settings.aws_access_key_id and settings.aws_secret_access_key:
-                    s3_storage = get_s3_storage()
+                    storage = get_s3_storage()
+                    storage_type = "s3"
+                    logger.info("Using S3 for media storage")
+                else:
+                    storage = get_local_storage()
+                    storage_type = "local"
+                    logger.info("Using local storage for media")
             except Exception as e:
-                logger.warning(f"S3 not available, will skip media: {get_safe_error_code(e)}")
+                logger.warning(f"Storage not available, will skip media: {get_safe_error_code(e)}")
 
             for msg in messages:
                 # Skip empty messages
                 if not msg.message and not msg.media:
                     continue
 
-                # Extract media (only if S3 is available)
+                # Extract media
                 media_list = []
-                if s3_storage and msg.media:
-                    media_list = await self._process_media(msg, s3_storage)
+                if storage and msg.media:
+                    media_list = await self._process_media(msg, storage)
 
                 # Build post object
                 post = {

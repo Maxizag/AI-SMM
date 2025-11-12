@@ -60,3 +60,6 @@ htmlcov/
 # Telethon session files
 *.session
 *.session-journal
+
+# Downloaded media files
+media/
