@@ -1,10 +1,12 @@
 """Real Telegram scraper using Telethon"""
 
+import asyncio
 import logging
 import os
 import tempfile
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Callable
+from functools import wraps
 
 from telethon import TelegramClient
 from telethon.tl.types import (
@@ -17,7 +19,9 @@ from telethon.errors import (
     ChannelPrivateError,
     ChannelInvalidError,
     UsernameInvalidError,
-    UsernameNotOccupiedError
+    UsernameNotOccupiedError,
+    FloodWaitError,
+    TimeoutError as TelethonTimeoutError
 )
 
 from scrapers.base import BaseScraper
@@ -29,6 +33,92 @@ from utils.telegram_metadata import get_post_metadata
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+def retry_on_error(max_attempts: int = 3, delay: float = 1.0):
+    """
+    Decorator to retry async function on errors
+
+    Args:
+        max_attempts: Maximum number of attempts (default: 3)
+        delay: Delay between retries in seconds (default: 1.0)
+
+    Handles:
+        - Network errors with exponential backoff
+        - Generic exceptions with retry
+        - FloodWaitError with proper wait time
+    """
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            last_exception = None
+
+            for attempt in range(max_attempts):
+                try:
+                    return await func(*args, **kwargs)
+
+                except FloodWaitError as e:
+                    # Telegram rate limiting - must wait
+                    wait_time = e.seconds
+                    if wait_time > 300:  # More than 5 minutes
+                        logger.warning(f"FloodWait too long ({wait_time}s), skipping")
+                        raise
+
+                    logger.info(f"FloodWait: waiting {wait_time}s (attempt {attempt + 1}/{max_attempts})")
+                    await asyncio.sleep(wait_time)
+                    last_exception = e
+
+                except (ConnectionError, TelethonTimeoutError, asyncio.TimeoutError) as e:
+                    # Network errors - retry with exponential backoff
+                    if attempt < max_attempts - 1:
+                        wait_time = delay * (2 ** attempt)  # Exponential backoff
+                        logger.warning(
+                            f"Network error ({get_safe_error_code(e)}), "
+                            f"retrying in {wait_time}s (attempt {attempt + 1}/{max_attempts})"
+                        )
+                        await asyncio.sleep(wait_time)
+                        last_exception = e
+                    else:
+                        raise
+
+                except Exception as e:
+                    # Other errors - retry without delay
+                    if attempt < max_attempts - 1:
+                        logger.warning(
+                            f"Error ({get_safe_error_code(e)}), "
+                            f"retrying (attempt {attempt + 1}/{max_attempts})"
+                        )
+                        last_exception = e
+                    else:
+                        raise
+
+            # All attempts failed
+            if last_exception:
+                raise last_exception
+
+        return wrapper
+    return decorator
+
+
+async def with_timeout(coro, timeout: float = 60.0):
+    """
+    Run coroutine with timeout
+
+    Args:
+        coro: Coroutine to run
+        timeout: Timeout in seconds (default: 60)
+
+    Returns:
+        Result of coroutine
+
+    Raises:
+        asyncio.TimeoutError if timeout exceeded
+    """
+    try:
+        return await asyncio.wait_for(coro, timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.warning(f"Operation timed out after {timeout}s")
+        raise
 
 
 class TelegramScraper(BaseScraper):
@@ -49,17 +139,21 @@ class TelegramScraper(BaseScraper):
 
     platform = "telegram"
 
-    def __init__(self, url: str):
+    def __init__(self, url: str, progress_callback: Optional[Callable[[int, int], None]] = None):
         """
         Initialize Telegram scraper
 
         Args:
             url: Telegram channel URL (e.g., https://t.me/channel or @channel)
+            progress_callback: Optional callback function(current, total) for progress tracking
         """
         super().__init__(url)
 
         # Parse handle from URL
         self.handle = self._parse_handle(url)
+
+        # Progress tracking
+        self.progress_callback = progress_callback
 
         # Initialize Telethon client
         self.client = None
@@ -121,12 +215,17 @@ class TelegramScraper(BaseScraper):
             settings.telegram_api_hash
         )
 
+    @retry_on_error(max_attempts=3, delay=2.0)
     async def verify(self) -> Dict[str, Any]:
         """
         Verify Telegram channel accessibility
 
         Returns:
             Verification result with status, handle, is_private, posts_count
+
+        Retries:
+            Automatically retries up to 3 times on network errors
+            Handles FloodWaitError with proper wait time
         """
         try:
             # Start client (will prompt for phone/code on first run)
@@ -196,6 +295,7 @@ class TelegramScraper(BaseScraper):
             if self.client:
                 await self.client.disconnect()
 
+    @retry_on_error(max_attempts=3, delay=2.0)
     async def scrape(self, limit: int = 200) -> List[Dict[str, Any]]:
         """
         Scrape posts from Telegram channel
@@ -217,19 +317,28 @@ class TelegramScraper(BaseScraper):
             "link": str,
             "raw": {}  # Empty for security
         }
+
+        Features:
+        - Automatic retry on network errors (3 attempts with exponential backoff)
+        - FloodWaitError handling with proper wait time
+        - Progress tracking via callback function
+        - Timeout protection for operations
         """
         try:
             # Start client (will prompt for phone/code on first run)
-            await self.client.start()
+            await with_timeout(self.client.start(), timeout=30.0)
 
             # Get channel entity
-            entity = await self.client.get_entity(self.handle)
+            entity = await with_timeout(self.client.get_entity(self.handle), timeout=15.0)
 
             # Fetch messages
-            messages: List[Message] = await self.client.get_messages(
-                entity,
-                limit=limit
+            logger.info(f"Fetching {limit} messages from @{self.handle}...")
+            messages: List[Message] = await with_timeout(
+                self.client.get_messages(entity, limit=limit),
+                timeout=60.0
             )
+            total_messages = len(messages)
+            logger.info(f"Fetched {total_messages} messages")
 
             posts = []
 
@@ -248,10 +357,17 @@ class TelegramScraper(BaseScraper):
             except Exception as e:
                 logger.warning(f"Storage not available, will skip media: {get_safe_error_code(e)}")
 
-            for msg in messages:
+            for i, msg in enumerate(messages, 1):
                 # Skip empty messages
                 if not msg.message and not msg.media:
                     continue
+
+                # Report progress
+                if self.progress_callback:
+                    try:
+                        self.progress_callback(i, total_messages)
+                    except Exception as e:
+                        logger.warning(f"Progress callback error: {get_safe_error_code(e)}")
 
                 # Extract media
                 media_list = []
@@ -281,6 +397,10 @@ class TelegramScraper(BaseScraper):
                 post.update(metadata)
 
                 posts.append(post)
+
+                # Log progress every 50 posts
+                if i % 50 == 0:
+                    logger.info(f"Progress: {i}/{total_messages} messages processed")
 
             logger.info(f"Scraped {len(posts)} posts from Telegram @{self.handle}")
             return posts
@@ -422,6 +542,7 @@ class TelegramScraper(BaseScraper):
 
         return media_list
 
+    @retry_on_error(max_attempts=3, delay=1.0)
     async def _download_and_upload_photo(
         self,
         message: Message,
@@ -436,6 +557,9 @@ class TelegramScraper(BaseScraper):
 
         Returns:
             Media object with type and S3 URL
+
+        Retries:
+            Automatically retries up to 3 times on network errors
         """
         temp_file = None
         try:
@@ -443,8 +567,11 @@ class TelegramScraper(BaseScraper):
             with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as f:
                 temp_file = f.name
 
-            # Download photo
-            await self.client.download_media(message.media, temp_file)
+            # Download photo with timeout
+            await with_timeout(
+                self.client.download_media(message.media, temp_file),
+                timeout=120.0
+            )
 
             # Upload to S3
             s3_url = s3_storage.upload_file(
@@ -465,6 +592,7 @@ class TelegramScraper(BaseScraper):
 
         return None
 
+    @retry_on_error(max_attempts=3, delay=1.0)
     async def _download_and_upload_video(
         self,
         message: Message,
@@ -481,6 +609,9 @@ class TelegramScraper(BaseScraper):
 
         Returns:
             Media object with type, URL, and metadata
+
+        Retries:
+            Automatically retries up to 3 times on network errors
         """
         temp_file = None
         try:
@@ -502,7 +633,11 @@ class TelegramScraper(BaseScraper):
                 logger.warning(f"Video too large: {file_size} bytes, skipping")
                 return None
 
-            await self.client.download_media(message.media, temp_file)
+            # Download with timeout (longer for videos)
+            await with_timeout(
+                self.client.download_media(message.media, temp_file),
+                timeout=300.0  # 5 minutes for videos
+            )
 
             # Upload to S3
             s3_url = s3_storage.upload_file(
@@ -540,6 +675,7 @@ class TelegramScraper(BaseScraper):
 
         return None
 
+    @retry_on_error(max_attempts=3, delay=1.0)
     async def _download_and_upload_document(
         self,
         message: Message,
@@ -563,6 +699,9 @@ class TelegramScraper(BaseScraper):
 
         Returns:
             Media object with type, URL, and metadata
+
+        Retries:
+            Automatically retries up to 3 times on network errors
         """
         temp_file = None
         try:
@@ -605,7 +744,12 @@ class TelegramScraper(BaseScraper):
                 logger.warning(f"{media_type} too large: {file_size} bytes, skipping")
                 return None
 
-            await self.client.download_media(message.media, temp_file)
+            # Download with timeout (vary based on file type)
+            timeout = 180.0 if media_type in ['audio', 'voice', 'video_note'] else 300.0  # 3-5 minutes
+            await with_timeout(
+                self.client.download_media(message.media, temp_file),
+                timeout=timeout
+            )
 
             # Upload to S3
             s3_url = s3_storage.upload_file(
