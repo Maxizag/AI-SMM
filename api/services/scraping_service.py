@@ -113,8 +113,6 @@ class ScrapingService:
             # Invalid URL or unsupported platform
             # Log only error type (security: no URLs in logs)
             logger.error(f"Verification error: {get_safe_error_code(e)}")
-            # TEMPORARY: Full error for debugging
-            logger.error(f"DEBUG: Full error: {str(e)}")
             return {
                 'handle': '',
                 'accessible': False,
@@ -127,10 +125,6 @@ class ScrapingService:
         except Exception as e:
             # Log only error type (security: no sensitive data in logs)
             logger.error(f"Unexpected error during verification: {get_safe_error_code(e)}")
-            # TEMPORARY: Full error for debugging
-            logger.error(f"DEBUG: Full error: {str(e)}")
-            import traceback
-            logger.error(f"DEBUG: Traceback: {traceback.format_exc()}")
             return {
                 'handle': '',
                 'accessible': False,
