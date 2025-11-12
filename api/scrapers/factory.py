@@ -50,7 +50,7 @@ class ScraperFactory:
             url: Source URL
             platform: Force specific platform (optional, will auto-detect if not provided)
             **kwargs: Platform-specific arguments:
-                - telegram: api_id, api_hash
+                - telegram: progress_callback (optional callback for progress tracking)
                 - vk: access_token
                 - instagram: session_file
 
@@ -69,9 +69,10 @@ class ScraperFactory:
 
         # Create platform-specific scraper
         if platform == 'telegram':
-            api_id = kwargs.get('api_id')
-            api_hash = kwargs.get('api_hash')
-            return TelegramScraper(url, api_id=api_id, api_hash=api_hash)
+            # Telegram credentials come from settings (config.py/.env)
+            # Optional progress callback can be passed
+            progress_callback = kwargs.get('progress_callback')
+            return TelegramScraper(url, progress_callback=progress_callback)
 
         elif platform == 'vk':
             access_token = kwargs.get('access_token')
