@@ -65,6 +65,9 @@ async def scrape_and_save(channel_url: str, limit: int = 10):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"scraped_{handle}_{timestamp}.json"
 
+        # Get absolute path
+        abs_path = os.path.abspath(filename)
+
         # Convert datetime objects to strings for JSON
         posts_serializable = []
         for post in posts:
@@ -83,10 +86,13 @@ async def scrape_and_save(channel_url: str, limit: int = 10):
             }, f, ensure_ascii=False, indent=2)
 
         print("=" * 60)
-        print(f"📄 Full data saved to: {filename}")
-        print(f"   Total posts: {len(posts)}")
+        print(f"📄 Full data saved to:")
+        print(f"   {abs_path}")
+        print(f"\n   Total posts: {len(posts)}")
         print(f"   Total characters: {sum(len(p['text']) for p in posts):,}")
-        print("\nYou can open this file to see full post texts!")
+        print(f"\nOpen with: cat {filename}")
+        print(f"Or:        open {filename}")
+        print("\nFull post texts are in this file!")
 
         return posts
 
