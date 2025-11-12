@@ -25,6 +25,7 @@ from config import get_settings
 from utils.s3_storage import get_s3_storage
 from utils.local_media_storage import get_local_storage
 from utils.safe_logging import get_safe_error_code
+from utils.telegram_metadata import get_post_metadata
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -274,6 +275,10 @@ class TelegramScraper(BaseScraper):
                     # Only store non-sensitive metadata needed for debugging
                     "raw": {}
                 }
+
+                # Extract and add metadata (hashtags, mentions, reactions, etc.)
+                metadata = get_post_metadata(msg)
+                post.update(metadata)
 
                 posts.append(post)
 
