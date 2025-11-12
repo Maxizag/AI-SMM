@@ -209,8 +209,28 @@ class TelegramScraper(BaseScraper):
                 "Please set TELEGRAM_API_ID and TELEGRAM_API_HASH in .env"
             )
 
+        # Try to find session file in multiple locations
+        # 1. Current directory (for local development)
+        # 2. /project_root (Docker mount point)
+        # 3. Parent directory (fallback)
+        session_name = settings.telegram_session_name
+
+        possible_paths = [
+            session_name,  # Current dir
+            f"/project_root/{session_name}",  # Docker mount
+            f"../{session_name}",  # Parent dir
+        ]
+
+        # Use the first path where session file exists, or default to current dir
+        session_path = session_name
+        for path in possible_paths:
+            if os.path.exists(f"{path}.session"):
+                session_path = path
+                logger.info(f"Found session file at: {path}.session")
+                break
+
         self.client = TelegramClient(
-            settings.telegram_session_name,
+            session_path,
             settings.telegram_api_id,
             settings.telegram_api_hash
         )

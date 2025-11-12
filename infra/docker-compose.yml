@@ -80,6 +80,7 @@ services:
     volumes:
       - ../api:/app
       - ../migrations:/migrations
+      - ..:/project_root
     depends_on:
       postgres:
         condition: service_healthy
@@ -124,6 +125,7 @@ services:
       - C_FORCE_ROOT=true
     volumes:
       - ../api:/app
+      - ..:/project_root
     depends_on:
       postgres:
         condition: service_healthy
