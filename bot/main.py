@@ -190,9 +190,8 @@ async def handle_sources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(message, reply_markup=reply_markup)
         return AWAITING_BRIEF_CHOICE
 
-    # Verify URL with API
+    # Verify URL with API (T6 spec)
     verification = await api_client.verify_source(
-        user_id=context.user_data['user_id'],
         url=text,
         access_token=context.user_data['access_token']
     )
@@ -203,10 +202,11 @@ async def handle_sources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return AWAITING_SOURCES
 
-    status = verification.get('status')
+    # T6 response: {handle, accessible, private, post_count, normalized_url, message}
+    accessible = verification.get('accessible')
 
-    # Handle different verification statuses
-    if status == "OK":
+    # Handle different verification results
+    if accessible:
         # Extract platform from URL
         platform = "unknown"
         url_lower = text.lower()
@@ -225,11 +225,13 @@ async def handle_sources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         elif "youtube.com" in url_lower or "youtu.be" in url_lower:
             platform = "youtube"
 
-        # Save source to database
-        result = await api_client.create_source(
-            user_id=context.user_data['user_id'],
+        # Save source to database using T6 endpoint
+        result = await api_client.create_source_v2(
             platform=platform,
             url=text,
+            handle=verification.get('handle', ''),
+            private=verification.get('private', False),
+            post_count_hint=verification.get('post_count', 0),
             access_token=context.user_data['access_token']
         )
 
@@ -239,24 +241,72 @@ async def handle_sources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
             return AWAITING_SOURCES
 
+        source_id = result.get('source_id')
         await update.message.reply_text("✅ Аккаунт сохранён!")
 
-        # Start scraping content from the source
-        await update.message.reply_text("📥 Начинаю сбор контента...")
+        # Start async scraping job (T6 spec)
+        await update.message.reply_text("📥 Запускаю сбор контента...")
 
-        scrape_result = await api_client.scrape_source(
-            source_id=result['id'],
+        scrape_result = await api_client.start_scraping_job(
             user_id=context.user_data['user_id'],
-            access_token=context.user_data['access_token']
+            source_ids=[source_id],
+            access_token=context.user_data['access_token'],
+            target_posts=100,
+            min_posts=50
         )
 
-        if not scrape_result or scrape_result.get('status') == 'ERROR':
+        if not scrape_result:
             await update.message.reply_text(
-                "😔 Произошла ошибка при сборе контента. Попробуйте добавить другой аккаунт."
+                "😔 Произошла ошибка при запуске сбора контента. Попробуйте добавить другой аккаунт."
             )
             return AWAITING_SOURCES
 
-        posts_collected = scrape_result.get('posts_collected', 0)
+        job_id = scrape_result.get('job_id')
+        await update.message.reply_text(
+            f"⏳ Задание создано! Собираю посты в фоновом режиме...\n"
+            f"Это может занять несколько минут."
+        )
+
+        # Poll job status until completion
+        import asyncio
+        max_attempts = 30  # 30 * 10 seconds = 5 minutes
+        attempt = 0
+
+        while attempt < max_attempts:
+            await asyncio.sleep(10)  # Wait 10 seconds between checks
+
+            status_result = await api_client.get_job_status(
+                job_id=job_id,
+                access_token=context.user_data['access_token']
+            )
+
+            if not status_result:
+                break
+
+            job_status = status_result.get('status')
+            progress = status_result.get('progress', {})
+            posts_collected = progress.get('current_total', 0)
+
+            if job_status == 'done':
+                posts_collected = progress.get('current_total', 0)
+                break
+            elif job_status == 'partial':
+                posts_collected = progress.get('current_total', 0)
+                await update.message.reply_text(
+                    f"⚠️ Сбор завершён частично. Собрано {posts_collected} постов."
+                )
+                break
+            elif job_status == 'error':
+                await update.message.reply_text(
+                    "😔 Произошла ошибка при сборе контента. Попробуйте добавить другой аккаунт."
+                )
+                return AWAITING_SOURCES
+
+            attempt += 1
+
+        # Use final posts_collected value
+        if 'posts_collected' not in locals():
+            posts_collected = 0
 
         # Check if enough posts collected
         if posts_collected >= 50:
@@ -291,35 +341,27 @@ async def handle_sources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
             return AWAITING_SOURCES
 
-    elif status == "CLOSED":
-        await update.message.reply_text(
-            "🔒 У вас закрытый аккаунт. Откройте временно или прикрепите файл с ≥50 постами."
-        )
-        return AWAITING_SOURCES
-
-    elif status == "LOW_CONTENT":
-        await update.message.reply_text(
-            "⚠️ У аккаунта мало постов. Добавьте другие соцсети или файл — иначе точность анализа снизится (~−15%)."
-        )
-        return AWAITING_SOURCES
-
-    elif status == "DUPLICATE":
-        await update.message.reply_text(
-            "Эта ссылка уже добавлена."
-        )
-        return AWAITING_SOURCES
-
-    elif status == "INVALID_URL":
-        await update.message.reply_text(
-            "Не удалось распознать ссылку. Проверьте формат:\n"
-            "https://t.me/... / https://vk.com/... / https://instagram.com/..."
-        )
-        return AWAITING_SOURCES
-
+    # Handle not accessible sources (T6 spec)
     else:
-        await update.message.reply_text(
-            "😔 Неизвестный статус проверки. Попробуйте ещё раз."
-        )
+        message = verification.get('message', 'Источник недоступен')
+        is_private = verification.get('private', False)
+        post_count = verification.get('post_count', 0)
+
+        if is_private:
+            await update.message.reply_text(
+                f"🔒 У вас закрытый аккаунт ({message}).\n\n"
+                f"Откройте временно или прикрепите файл с ≥50 постами."
+            )
+        elif post_count > 0 and post_count < 50:
+            await update.message.reply_text(
+                f"⚠️ У аккаунта мало постов ({post_count} найдено, нужно ≥50).\n\n"
+                f"Добавьте другие соцсети или файл — иначе точность анализа снизится (~−15%)."
+            )
+        else:
+            await update.message.reply_text(
+                f"😔 Не удалось проверить источник: {message}\n\n"
+                f"Попробуйте другую ссылку."
+            )
         return AWAITING_SOURCES
 
 

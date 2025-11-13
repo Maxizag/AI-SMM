@@ -533,7 +533,19 @@ async def create_source(
             detail=f"User with id {source_data.user_id} not found"
         )
 
-    source = Source(**source_data.model_dump())
+    # Create source with explicit defaults for SQLAlchemy 2.0 compatibility
+    source_dict = source_data.model_dump()
+    source = Source(
+        user_id=source_dict['user_id'],
+        platform=source_dict['platform'],
+        url=source_dict['url'],
+        handle=source_dict.get('handle'),
+        is_private=False,  # Default for old endpoint
+        post_count=0,  # Default for old endpoint
+        status='new',  # Default status
+        meta={}  # Default empty meta
+    )
+
     db.add(source)
     await db.commit()
     await db.refresh(source)

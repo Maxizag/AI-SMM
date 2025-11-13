@@ -49,27 +49,31 @@ class APIClient:
 
     async def verify_source(
         self,
-        user_id: str,
         url: str,
         access_token: str
     ) -> Optional[Dict[str, Any]]:
         """
-        Verify a source URL before saving
+        Verify a source URL before saving (T6 spec)
 
         Args:
-            user_id: User UUID
             url: URL to verify
             access_token: User's JWT token
 
         Returns:
-            Verification result with status: OK, CLOSED, LOW_CONTENT, DUPLICATE, INVALID_URL
+            Verification result with handle, accessible, private, post_count, normalized_url, message
             or None if failed
         """
+        # Detect platform from URL
+        platform = self._detect_platform(url)
+        if not platform:
+            logger.error(f"Could not detect platform from URL: {url}")
+            return None
+
         try:
             api_url = f"{self.base_url}/sources/verify"
             headers = {"Authorization": f"Bearer {access_token}"}
             payload = {
-                "user_id": user_id,
+                "platform": platform,
                 "url": url
             }
 
@@ -77,7 +81,7 @@ class APIClient:
             response.raise_for_status()
 
             data = response.json()
-            logger.info(f"Source verified: {url}, status: {data['status']}")
+            logger.info(f"Source verified: {url}, handle: {data.get('handle')}")
             return data
 
         except httpx.HTTPError as e:
@@ -87,46 +91,148 @@ class APIClient:
             logger.error(f"Unexpected error verifying source: {e}")
             return None
 
-    async def scrape_source(
+    def _detect_platform(self, url: str) -> Optional[str]:
+        """Detect platform from URL"""
+        url_lower = url.lower()
+
+        if "t.me" in url_lower or "telegram.org" in url_lower or url.startswith("@"):
+            return "telegram"
+        elif "vk.com" in url_lower or "vkontakte" in url_lower:
+            return "vk"
+        elif "instagram.com" in url_lower or "instagr.am" in url_lower:
+            return "instagram"
+
+        return None
+
+    async def create_source_v2(
         self,
-        source_id: str,
-        user_id: str,
+        platform: str,
+        url: str,
+        handle: str,
+        private: bool,
+        post_count_hint: int,
         access_token: str
     ) -> Optional[Dict[str, Any]]:
         """
-        Start scraping posts from a source
+        Create a verified source (T6 spec)
 
         Args:
-            source_id: Source UUID
-            user_id: User UUID
+            platform: Platform name (telegram|vk|instagram)
+            url: Source URL
+            handle: Account handle/username
+            private: Whether account is private
+            post_count_hint: Estimated post count from verification
             access_token: User's JWT token
 
         Returns:
-            Scrape result with status: SUCCESS, IN_PROGRESS, ERROR
-            or None if failed
+            Dict with source_id and status: "verified", or None if failed
         """
         try:
-            api_url = f"{self.base_url}/ingest/scrape"
+            api_url = f"{self.base_url}/sources/v2"
             headers = {"Authorization": f"Bearer {access_token}"}
             payload = {
-                "source_id": source_id,
-                "user_id": user_id
+                "platform": platform,
+                "url": url,
+                "handle": handle,
+                "private": private,
+                "post_count_hint": post_count_hint
             }
 
             response = await self.client.post(api_url, json=payload, headers=headers)
             response.raise_for_status()
 
             data = response.json()
-            logger.info(f"Scraping completed: {source_id}, posts: {data.get('posts_collected', 0)}")
+            logger.info(f"Source created via v2: source_id={data.get('source_id')}, status={data.get('status')}")
             return data
 
         except httpx.HTTPError as e:
-            logger.error(f"Failed to scrape source: {e}")
+            logger.error(f"Failed to create source v2: {e}")
             return None
         except Exception as e:
-            logger.error(f"Unexpected error scraping source: {e}")
+            logger.error(f"Unexpected error creating source v2: {e}")
             return None
 
+    async def start_scraping_job(
+        self,
+        user_id: str,
+        source_ids: list,
+        access_token: str,
+        target_posts: int = 100,
+        min_posts: int = 50
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Start asynchronous scraping job (T6 spec)
+
+        Args:
+            user_id: User UUID
+            source_ids: List of source UUIDs to scrape
+            access_token: User's JWT token
+            target_posts: Target number of posts (default: 100)
+            min_posts: Minimum acceptable posts (default: 50)
+
+        Returns:
+            Dict with job_id and status: "queued", or None if failed
+        """
+        try:
+            api_url = f"{self.base_url}/ingest/scrape"
+            headers = {"Authorization": f"Bearer {access_token}"}
+            payload = {
+                "user_id": user_id,
+                "source_ids": source_ids,
+                "target_posts": target_posts,
+                "min_posts": min_posts
+            }
+
+            response = await self.client.post(api_url, json=payload, headers=headers)
+            response.raise_for_status()
+
+            data = response.json()
+            logger.info(f"Scraping job created: job_id={data.get('job_id')}, status={data.get('status')}")
+            return data
+
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to start scraping job: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error starting scraping job: {e}")
+            return None
+
+    async def get_job_status(
+        self,
+        job_id: str,
+        access_token: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get scraping job status (T6 spec)
+
+        Args:
+            job_id: Job UUID
+            access_token: User's JWT token
+
+        Returns:
+            Dict with job_id, status, progress, errors, recommendations
+            or None if failed
+        """
+        try:
+            api_url = f"{self.base_url}/ingest/status"
+            headers = {"Authorization": f"Bearer {access_token}"}
+            params = {"job_id": job_id}
+
+            response = await self.client.get(api_url, params=params, headers=headers)
+            response.raise_for_status()
+
+            data = response.json()
+            logger.info(f"Job status fetched: job_id={job_id}, status={data.get('status')}")
+            return data
+
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to get job status: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error getting job status: {e}")
+            return None
+
+    # Legacy method for backward compatibility
     async def create_source(
         self,
         user_id: str,
@@ -135,7 +241,7 @@ class APIClient:
         access_token: str
     ) -> Optional[Dict[str, Any]]:
         """
-        Create a content source
+        Create a content source (LEGACY - use create_source_v2 instead)
 
         Args:
             user_id: User UUID
@@ -159,7 +265,7 @@ class APIClient:
             response.raise_for_status()
 
             data = response.json()
-            logger.info(f"Source created: {data['id']}")
+            logger.info(f"Source created (legacy): {data['id']}")
             return data
 
         except httpx.HTTPError as e:
@@ -177,10 +283,14 @@ class APIClient:
         tone: str,
         topic: str,
         frequency: str,
-        access_token: str
+        access_token: str,
+        completion: int = 1  # 0=не пройден, 1=пройден (default: 1)
     ) -> Optional[Dict[str, Any]]:
         """
-        Create a content brief (Branch 1: experienced users)
+        Create a content brief (Branch 1: experienced users) - T6.1
+
+        Args:
+            completion: 0 if placeholder (not completed), 1 if completed (default)
 
         Returns:
             Created brief data or None if failed
@@ -194,14 +304,15 @@ class APIClient:
                 "audience": audience,
                 "tone": tone,
                 "topic": topic,
-                "frequency": frequency
+                "frequency": frequency,
+                "completion": completion
             }
 
             response = await self.client.post(api_url, json=payload, headers=headers)
             response.raise_for_status()
 
             data = response.json()
-            logger.info(f"Brief created: {data['id']}")
+            logger.info(f"Brief created: {data['id']}, completion={completion}")
             return data
 
         except httpx.HTTPError as e:
