@@ -310,9 +310,8 @@ async def handle_sources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # Go to main menu immediately (monitoring runs in background)
         return MAIN_MENU
 
-    # Verify URL with API
+    # T6.1: Verify URL with API
     verification = await api_client.verify_source(
-        user_id=context.user_data['user_id'],
         url=text,
         access_token=context.user_data['access_token']
     )
@@ -323,86 +322,60 @@ async def handle_sources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return AWAITING_SOURCES
 
-    status = verification.get('status')
+    # T6.1: Handle new response format
+    accessible = verification.get('accessible', False)
+    private = verification.get('private', False)
+    post_count = verification.get('post_count', 0)
+    handle = verification.get('handle', '')
+    normalized_url = verification.get('normalized_url', text)
+    message_text = verification.get('message', '')
+    platform = api_client._detect_platform(text)
 
-    # Handle different verification statuses
-    if status == "OK":
-        # Extract platform from URL
-        platform = "unknown"
-        url_lower = text.lower()
-        if "instagram.com" in url_lower or "instagr.am" in url_lower:
-            platform = "instagram"
-        elif "t.me" in url_lower or "telegram.org" in url_lower:
-            platform = "telegram"
-        elif "vk.com" in url_lower:
-            platform = "vk"
-        elif "twitter.com" in url_lower or "x.com" in url_lower:
-            platform = "twitter"
-        elif "facebook.com" in url_lower or "fb.com" in url_lower:
-            platform = "facebook"
-        elif "tiktok.com" in url_lower:
-            platform = "tiktok"
-        elif "youtube.com" in url_lower or "youtu.be" in url_lower:
-            platform = "youtube"
-
-        # Save source to database
-        result = await api_client.create_source(
-            user_id=context.user_data['user_id'],
-            platform=platform,
-            url=text,
-            access_token=context.user_data['access_token']
-        )
-
-        if not result:
-            await update.message.reply_text(
-                "😔 Произошла ошибка при сохранении ссылки. Попробуйте ещё раз."
-            )
-            return AWAITING_SOURCES
-
-        # T6.1: Save source_id for later async scraping
-        if 'added_sources' not in context.user_data:
-            context.user_data['added_sources'] = []
-
-        context.user_data['added_sources'].append(result['id'])
-        sources_count = len(context.user_data['added_sources'])
-
+    # Check if source is accessible
+    if not accessible:
         await update.message.reply_text(
-            f"✅ Аккаунт сохранён! ({sources_count} источников добавлено)\n\n"
-            f"Добавьте ещё ссылки или напишите 'готово' для начала сбора постов."
-        )
-
-        return AWAITING_SOURCES
-
-    elif status == "CLOSED":
-        await update.message.reply_text(
-            "🔒 У вас закрытый аккаунт. Откройте временно или прикрепите файл с ≥50 постами."
+            f"😔 {message_text}\n\n"
+            f"Проверьте ссылку и попробуйте снова."
         )
         return AWAITING_SOURCES
 
-    elif status == "LOW_CONTENT":
+    # Warn about private or low content
+    if private:
         await update.message.reply_text(
-            "⚠️ У аккаунта мало постов. Добавьте другие соцсети или файл — иначе точность анализа снизится (~−15%)."
+            f"🔒 {message_text}"
+        )
+    elif post_count < 50:
+        await update.message.reply_text(
+            f"⚠️ {message_text}"
+        )
+
+    # Save source to database
+    result = await api_client.create_source(
+        user_id=context.user_data['user_id'],
+        platform=platform,
+        url=normalized_url,
+        access_token=context.user_data['access_token']
+    )
+
+    if not result:
+        await update.message.reply_text(
+            "😔 Произошла ошибка при сохранении ссылки. Попробуйте ещё раз."
         )
         return AWAITING_SOURCES
 
-    elif status == "DUPLICATE":
-        await update.message.reply_text(
-            "Эта ссылка уже добавлена."
-        )
-        return AWAITING_SOURCES
+    # T6.1: Save source_id for later async scraping
+    if 'added_sources' not in context.user_data:
+        context.user_data['added_sources'] = []
 
-    elif status == "INVALID_URL":
-        await update.message.reply_text(
-            "Не удалось распознать ссылку. Проверьте формат:\n"
-            "https://t.me/... / https://vk.com/... / https://instagram.com/..."
-        )
-        return AWAITING_SOURCES
+    context.user_data['added_sources'].append(result['id'])
+    sources_count = len(context.user_data['added_sources'])
 
-    else:
-        await update.message.reply_text(
-            "😔 Неизвестный статус проверки. Попробуйте ещё раз."
-        )
-        return AWAITING_SOURCES
+    await update.message.reply_text(
+        f"✅ Аккаунт сохранён! ({sources_count} источников добавлено)\n\n"
+        f"Добавьте ещё ссылки или напишите 'готово' для начала сбора постов."
+    )
+
+    return AWAITING_SOURCES
 
 
 async def handle_brief_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

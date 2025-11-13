@@ -49,27 +49,31 @@ class APIClient:
 
     async def verify_source(
         self,
-        user_id: str,
         url: str,
         access_token: str
     ) -> Optional[Dict[str, Any]]:
         """
-        Verify a source URL before saving
+        Verify a source URL before saving (T6 spec)
 
         Args:
-            user_id: User UUID
             url: URL to verify
             access_token: User's JWT token
 
         Returns:
-            Verification result with status: OK, CLOSED, LOW_CONTENT, DUPLICATE, INVALID_URL
+            Verification result with handle, accessible, private, post_count, normalized_url, message
             or None if failed
         """
+        # Detect platform from URL
+        platform = self._detect_platform(url)
+        if not platform:
+            logger.error(f"Could not detect platform from URL: {url}")
+            return None
+
         try:
             api_url = f"{self.base_url}/sources/verify"
             headers = {"Authorization": f"Bearer {access_token}"}
             payload = {
-                "user_id": user_id,
+                "platform": platform,
                 "url": url
             }
 
@@ -77,7 +81,7 @@ class APIClient:
             response.raise_for_status()
 
             data = response.json()
-            logger.info(f"Source verified: {url}, status: {data['status']}")
+            logger.info(f"Source verified: {url}, handle: {data.get('handle')}")
             return data
 
         except httpx.HTTPError as e:
@@ -86,6 +90,19 @@ class APIClient:
         except Exception as e:
             logger.error(f"Unexpected error verifying source: {e}")
             return None
+
+    def _detect_platform(self, url: str) -> Optional[str]:
+        """Detect platform from URL"""
+        url_lower = url.lower()
+
+        if "t.me" in url_lower or "telegram.org" in url_lower or url.startswith("@"):
+            return "telegram"
+        elif "vk.com" in url_lower or "vkontakte" in url_lower:
+            return "vk"
+        elif "instagram.com" in url_lower or "instagr.am" in url_lower:
+            return "instagram"
+
+        return None
 
     async def start_scraping_job(
         self,
