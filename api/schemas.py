@@ -86,6 +86,7 @@ class BriefBase(BaseModel):
     tone: Optional[str] = None
     topic: Optional[str] = None
     frequency: Optional[str] = None
+    completion: int = 0  # 0=не пройден, 1=пройден
 
 
 class BriefCreate(BriefBase):

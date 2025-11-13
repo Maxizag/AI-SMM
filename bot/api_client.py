@@ -87,44 +87,84 @@ class APIClient:
             logger.error(f"Unexpected error verifying source: {e}")
             return None
 
-    async def scrape_source(
+    async def start_scraping_job(
         self,
-        source_id: str,
         user_id: str,
-        access_token: str
+        source_ids: list,
+        access_token: str,
+        target_posts: int = 100,
+        min_posts: int = 50
     ) -> Optional[Dict[str, Any]]:
         """
-        Start scraping posts from a source
+        Start asynchronous scraping job (T6 spec)
 
         Args:
-            source_id: Source UUID
             user_id: User UUID
+            source_ids: List of source UUIDs to scrape
             access_token: User's JWT token
+            target_posts: Target number of posts (default: 100)
+            min_posts: Minimum acceptable posts (default: 50)
 
         Returns:
-            Scrape result with status: SUCCESS, IN_PROGRESS, ERROR
-            or None if failed
+            Dict with job_id and status: "queued", or None if failed
         """
         try:
             api_url = f"{self.base_url}/ingest/scrape"
             headers = {"Authorization": f"Bearer {access_token}"}
             payload = {
-                "source_id": source_id,
-                "user_id": user_id
+                "user_id": user_id,
+                "source_ids": source_ids,
+                "target_posts": target_posts,
+                "min_posts": min_posts
             }
 
             response = await self.client.post(api_url, json=payload, headers=headers)
             response.raise_for_status()
 
             data = response.json()
-            logger.info(f"Scraping completed: {source_id}, posts: {data.get('posts_collected', 0)}")
+            logger.info(f"Scraping job created: job_id={data.get('job_id')}, status={data.get('status')}")
             return data
 
         except httpx.HTTPError as e:
-            logger.error(f"Failed to scrape source: {e}")
+            logger.error(f"Failed to start scraping job: {e}")
             return None
         except Exception as e:
-            logger.error(f"Unexpected error scraping source: {e}")
+            logger.error(f"Unexpected error starting scraping job: {e}")
+            return None
+
+    async def get_job_status(
+        self,
+        job_id: str,
+        access_token: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get scraping job status (T6 spec)
+
+        Args:
+            job_id: Job UUID
+            access_token: User's JWT token
+
+        Returns:
+            Dict with job_id, status, progress, errors, recommendations
+            or None if failed
+        """
+        try:
+            api_url = f"{self.base_url}/ingest/status"
+            headers = {"Authorization": f"Bearer {access_token}"}
+            params = {"job_id": job_id}
+
+            response = await self.client.get(api_url, params=params, headers=headers)
+            response.raise_for_status()
+
+            data = response.json()
+            logger.info(f"Job status fetched: job_id={job_id}, status={data.get('status')}")
+            return data
+
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to get job status: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error getting job status: {e}")
             return None
 
     async def create_source(
@@ -177,10 +217,14 @@ class APIClient:
         tone: str,
         topic: str,
         frequency: str,
-        access_token: str
+        access_token: str,
+        completion: int = 1  # 0=не пройден, 1=пройден (default: 1)
     ) -> Optional[Dict[str, Any]]:
         """
-        Create a content brief (Branch 1: experienced users)
+        Create a content brief (Branch 1: experienced users) - T6.1
+
+        Args:
+            completion: 0 if placeholder (not completed), 1 if completed (default)
 
         Returns:
             Created brief data or None if failed
@@ -194,14 +238,15 @@ class APIClient:
                 "audience": audience,
                 "tone": tone,
                 "topic": topic,
-                "frequency": frequency
+                "frequency": frequency,
+                "completion": completion
             }
 
             response = await self.client.post(api_url, json=payload, headers=headers)
             response.raise_for_status()
 
             data = response.json()
-            logger.info(f"Brief created: {data['id']}")
+            logger.info(f"Brief created: {data['id']}, completion={completion}")
             return data
 
         except httpx.HTTPError as e:
