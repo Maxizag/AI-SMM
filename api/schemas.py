@@ -187,6 +187,7 @@ class JobStatusResponse(BaseModel):
     status: str  # queued|running|done|error|partial
     progress: dict  # {total_collected: int, by_source: [SourceProgress], summary: {...}}
     errors: list[ScrapingError | dict] = []  # Support both structured and legacy errors
+    recommendations: list[str] = []  # Recommendations for improving post collection
 
 
 # Manual posts schemas

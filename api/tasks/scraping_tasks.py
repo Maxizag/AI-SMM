@@ -423,6 +423,18 @@ async def _execute_scraping_job(job_id: str, user_id: str, source_ids: Optional[
                 ))
                 logger.error(f"Job {job_id} failed: {total_collected}/{min_posts} minimum")
 
+            # Generate recommendations based on total_collected (business rules)
+            recommendations = []
+            if total_collected < 50:
+                recommendations.append("Добавьте ещё источник для достижения минимума в 50 постов")
+                recommendations.append("Или загрузите файл с постами через /ingest/manual_posts")
+                recommendations.append("Можете добавить референсы через /ingest/hints (вес ≤ 0.3)")
+            elif total_collected < 100:
+                recommendations.append("Рекомендуем собрать 100 постов для лучшего качества анализа")
+
+            # Add recommendations to summary
+            summary['recommendations'] = recommendations
+
             # Update job with final status
             await _update_job(
                 db, job_uuid,

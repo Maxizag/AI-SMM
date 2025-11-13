@@ -307,11 +307,15 @@ async def get_job_status(
                 "message": str(error)
             })
 
+    # Extract recommendations from summary
+    recommendations = job.progress.get("summary", {}).get("recommendations", [])
+
     return JobStatusResponse(
         job_id=job.id,
         status=job.status,
         progress=progress,
-        errors=structured_errors
+        errors=structured_errors,
+        recommendations=recommendations
     )
 
 
