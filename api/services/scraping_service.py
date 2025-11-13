@@ -275,14 +275,20 @@ class ScrapingService:
                 )
 
                 self.db.add(post)
-                saved_count += 1
+
+                # Commit each post individually to avoid transaction rollback issues
+                try:
+                    await self.db.commit()
+                    saved_count += 1
+                except Exception as commit_error:
+                    # Rollback failed transaction and continue with next post
+                    await self.db.rollback()
+                    logger.error(f"Error committing post {post_data.get('platform_post_id')}: {get_safe_error_code(commit_error)}")
+                    continue
 
             except Exception as e:
                 # Log only error type (security: no post content in logs)
                 logger.error(f"Error saving post {post_data.get('platform_post_id')}: {get_safe_error_code(e)}")
                 continue
-
-        # Commit all posts at once
-        await self.db.commit()
 
         return saved_count
