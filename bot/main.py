@@ -1,5 +1,6 @@
 import logging
 import re
+import asyncio
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     Application,
@@ -44,6 +45,102 @@ api_client = APIClient(settings.api_base_url)
     # Post-onboarding
     MAIN_MENU,
 ) = range(12)
+
+
+# ========== SCRAPING JOB MONITORING (T6.1) ==========
+
+async def monitor_scraping_job(
+    application: Application,
+    chat_id: int,
+    job_id: str,
+    user_id: str,
+    access_token: str
+):
+    """
+    Monitor scraping job status and notify user when complete (T6.1)
+
+    Polls GET /ingest/status every 10 seconds until job is done.
+    When complete, sends message with briefing offer.
+    """
+    logger.info(f"Starting job monitoring: job_id={job_id}, chat_id={chat_id}")
+
+    poll_interval = 10  # seconds
+    max_polls = 120  # 20 minutes max
+    polls_count = 0
+
+    while polls_count < max_polls:
+        try:
+            # Get job status
+            status_data = await api_client.get_job_status(job_id, access_token)
+
+            if not status_data:
+                logger.error(f"Failed to get job status: job_id={job_id}")
+                await application.bot.send_message(
+                    chat_id=chat_id,
+                    text="😔 Произошла ошибка при отслеживании сбора постов. Проверьте статус позже через меню."
+                )
+                return
+
+            status = status_data.get('status')
+            progress = status_data.get('progress', {})
+            total_collected = progress.get('total_collected', 0)
+            recommendations = status_data.get('recommendations', [])
+
+            logger.info(f"Job {job_id} status: {status}, collected: {total_collected}")
+
+            # Check if job is complete
+            if status in ['done', 'partial', 'error']:
+                # Send completion message
+                if status == 'done':
+                    message = f"✅ Отлично! Собрано {total_collected} постов.\n\n"
+                elif status == 'partial':
+                    message = f"⚠️ Частично завершено. Собрано {total_collected} постов.\n\n"
+                else:  # error
+                    message = f"❌ Не удалось собрать достаточно постов. Собрано: {total_collected}.\n\n"
+
+                # Add recommendations if any
+                if recommendations:
+                    message += "💡 Рекомендации:\n"
+                    for rec in recommendations:
+                        message += f"• {rec}\n"
+                    message += "\n"
+
+                # T6.1: Offer briefing after scraping
+                message += (
+                    "🧠 Хочу точнее подстроиться под твои цели.\n"
+                    "Ответишь на 5 вопросов? Это займёт ~1 минуту."
+                )
+
+                keyboard = [
+                    ["🔧 Пройти сейчас"],
+                    ["⏭️ Позже в настройках"]
+                ]
+                reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+
+                await application.bot.send_message(
+                    chat_id=chat_id,
+                    text=message,
+                    reply_markup=reply_markup
+                )
+
+                logger.info(f"Job {job_id} monitoring complete. Status: {status}")
+                return
+
+            # Job still running, wait and check again
+            polls_count += 1
+            await asyncio.sleep(poll_interval)
+
+        except Exception as e:
+            logger.error(f"Error monitoring job {job_id}: {e}")
+            await asyncio.sleep(poll_interval)
+            polls_count += 1
+
+    # Timeout reached
+    logger.warning(f"Job {job_id} monitoring timeout after {max_polls * poll_interval} seconds")
+    await application.bot.send_message(
+        chat_id=chat_id,
+        text="⏱️ Сбор постов занимает больше времени, чем ожидалось. Проверьте статус позже через меню."
+    )
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -154,13 +251,18 @@ async def handle_user_type_choice(update: Update, context: ContextTypes.DEFAULT_
 
 async def handle_sources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """
-    Step 1: Collect and verify social media sources (3-5 links)
+    Step 1: Collect and verify social media sources (3-5 links) - T6.1 version
     Uses POST /sources/verify to check each URL
+    Starts async scraping job when user types "готово"
     """
     text = update.message.text.strip()
 
     if text.lower() in ['готово', 'готов', 'done', 'готова']:
-        sources_count = context.user_data.get('sources_count', 0)
+        # Initialize added_sources list if not exists
+        if 'added_sources' not in context.user_data:
+            context.user_data['added_sources'] = []
+
+        sources_count = len(context.user_data.get('added_sources', []))
 
         if sources_count < 1:
             await update.message.reply_text(
@@ -169,28 +271,46 @@ async def handle_sources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
             return AWAITING_SOURCES
 
-        # User finished adding sources - ask about briefing
-        total_posts = context.user_data.get('total_posts', 0)
-        if total_posts < 50:
-            await update.message.reply_text(
-                f"⚠️ Собрано всего {total_posts} постов.\n"
-                f"Рекомендуем добавить больше контента для точного анализа (точность может снизиться на ~15%)."
-            )
-
-        # Ask if user wants to do briefing now
-        message = (
-            "🧠 Хотите пройти брифинг сейчас?\n\n"
-            "Это поможет мне лучше понять ваши цели и создавать более точный контент."
+        # T6.1: Start async scraping job for all added sources
+        await update.message.reply_text(
+            f"📥 Отлично! Начинаю сбор постов из {sources_count} источников...\n\n"
+            f"Это может занять несколько минут. Я уведомлю вас, когда всё будет готово."
         )
-        keyboard = [
-            ["Да, пройти сейчас"],
-            ["Позже"]
-        ]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
-        await update.message.reply_text(message, reply_markup=reply_markup)
-        return AWAITING_BRIEF_CHOICE
 
-    # Verify URL with API (T6 spec)
+        # Start scraping job
+        source_ids = context.user_data['added_sources']
+        job_result = await api_client.start_scraping_job(
+            user_id=context.user_data['user_id'],
+            source_ids=source_ids,
+            access_token=context.user_data['access_token'],
+            target_posts=100,
+            min_posts=50
+        )
+
+        if not job_result:
+            await update.message.reply_text(
+                "😔 Произошла ошибка при запуске сбора постов. Попробуйте позже."
+            )
+            return MAIN_MENU
+
+        job_id = job_result.get('job_id')
+        logger.info(f"Started scraping job: job_id={job_id}, sources={len(source_ids)}")
+
+        # T6.1: Start background task to monitor job status
+        asyncio.create_task(
+            monitor_scraping_job(
+                application=context.application,
+                chat_id=update.effective_chat.id,
+                job_id=job_id,
+                user_id=context.user_data['user_id'],
+                access_token=context.user_data['access_token']
+            )
+        )
+
+        # Go to main menu immediately (monitoring runs in background)
+        return MAIN_MENU
+
+    # T6.1: Verify URL with API
     verification = await api_client.verify_source(
         url=text,
         access_token=context.user_data['access_token']
@@ -202,174 +322,68 @@ async def handle_sources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return AWAITING_SOURCES
 
-    # T6 response: {handle, accessible, private, post_count, normalized_url, message}
-    accessible = verification.get('accessible')
+    # T6.1: Handle new response format
+    accessible = verification.get('accessible', False)
+    private = verification.get('private', False)
+    post_count = verification.get('post_count', 0)
+    handle = verification.get('handle', '')
+    normalized_url = verification.get('normalized_url', text)
+    message_text = verification.get('message', '')
+    platform = api_client._detect_platform(text)
 
-    # Handle different verification results
-    if accessible:
-        # Extract platform from URL
-        platform = "unknown"
-        url_lower = text.lower()
-        if "instagram.com" in url_lower or "instagr.am" in url_lower:
-            platform = "instagram"
-        elif "t.me" in url_lower or "telegram.org" in url_lower:
-            platform = "telegram"
-        elif "vk.com" in url_lower:
-            platform = "vk"
-        elif "twitter.com" in url_lower or "x.com" in url_lower:
-            platform = "twitter"
-        elif "facebook.com" in url_lower or "fb.com" in url_lower:
-            platform = "facebook"
-        elif "tiktok.com" in url_lower:
-            platform = "tiktok"
-        elif "youtube.com" in url_lower or "youtu.be" in url_lower:
-            platform = "youtube"
-
-        # Save source to database using T6 endpoint
-        result = await api_client.create_source_v2(
-            platform=platform,
-            url=text,
-            handle=verification.get('handle', ''),
-            private=verification.get('private', False),
-            post_count_hint=verification.get('post_count', 0),
-            access_token=context.user_data['access_token']
-        )
-
-        if not result:
-            await update.message.reply_text(
-                "😔 Произошла ошибка при сохранении ссылки. Попробуйте ещё раз."
-            )
-            return AWAITING_SOURCES
-
-        source_id = result.get('source_id')
-        await update.message.reply_text("✅ Аккаунт сохранён!")
-
-        # Start async scraping job (T6 spec)
-        await update.message.reply_text("📥 Запускаю сбор контента...")
-
-        scrape_result = await api_client.start_scraping_job(
-            user_id=context.user_data['user_id'],
-            source_ids=[source_id],
-            access_token=context.user_data['access_token'],
-            target_posts=100,
-            min_posts=50
-        )
-
-        if not scrape_result:
-            await update.message.reply_text(
-                "😔 Произошла ошибка при запуске сбора контента. Попробуйте добавить другой аккаунт."
-            )
-            return AWAITING_SOURCES
-
-        job_id = scrape_result.get('job_id')
+    # Check if source is accessible
+    if not accessible:
         await update.message.reply_text(
-            f"⏳ Задание создано! Собираю посты в фоновом режиме...\n"
-            f"Это может занять несколько минут."
+            f"😔 {message_text}\n\n"
+            f"Проверьте ссылку и попробуйте снова."
+        )
+        return AWAITING_SOURCES
+
+    # Warn about private or low content
+    if private:
+        await update.message.reply_text(
+            f"🔒 {message_text}"
+        )
+    elif post_count < 50:
+        await update.message.reply_text(
+            f"⚠️ {message_text}"
         )
 
-        # Poll job status until completion
-        import asyncio
-        max_attempts = 30  # 30 * 10 seconds = 5 minutes
-        attempt = 0
+    # Save source to database
+    result = await api_client.create_source(
+        user_id=context.user_data['user_id'],
+        platform=platform,
+        url=normalized_url,
+        access_token=context.user_data['access_token']
+    )
 
-        while attempt < max_attempts:
-            await asyncio.sleep(10)  # Wait 10 seconds between checks
-
-            status_result = await api_client.get_job_status(
-                job_id=job_id,
-                access_token=context.user_data['access_token']
-            )
-
-            if not status_result:
-                break
-
-            job_status = status_result.get('status')
-            progress = status_result.get('progress', {})
-            posts_collected = progress.get('current_total', 0)
-
-            if job_status == 'done':
-                posts_collected = progress.get('current_total', 0)
-                break
-            elif job_status == 'partial':
-                posts_collected = progress.get('current_total', 0)
-                await update.message.reply_text(
-                    f"⚠️ Сбор завершён частично. Собрано {posts_collected} постов."
-                )
-                break
-            elif job_status == 'error':
-                await update.message.reply_text(
-                    "😔 Произошла ошибка при сборе контента. Попробуйте добавить другой аккаунт."
-                )
-                return AWAITING_SOURCES
-
-            attempt += 1
-
-        # Use final posts_collected value
-        if 'posts_collected' not in locals():
-            posts_collected = 0
-
-        # Check if enough posts collected
-        if posts_collected >= 50:
-            # Track total posts collected
-            if 'total_posts' not in context.user_data:
-                context.user_data['total_posts'] = 0
-            context.user_data['total_posts'] += posts_collected
-
-            await update.message.reply_text(
-                f"✅ Собрано {posts_collected} постов!\n\n"
-                f"Отлично! Этого достаточно для анализа вашего стиля."
-            )
-
-            # Ask if user wants to do briefing now
-            message = (
-                "🧠 Хотите пройти брифинг сейчас?\n\n"
-                "Это поможет мне лучше понять ваши цели и создавать более точный контент."
-            )
-            keyboard = [
-                ["Да, пройти сейчас"],
-                ["Позже"]
-            ]
-            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
-            await update.message.reply_text(message, reply_markup=reply_markup)
-            return AWAITING_BRIEF_CHOICE
-        else:
-            # Not enough posts
-            await update.message.reply_text(
-                f"⚠️ Собрано {posts_collected} постов (нужно минимум 50).\n\n"
-                f"Добавьте ещё один аккаунт с большим количеством постов для точного анализа.\n\n"
-                f"Или отправьте 'готово' если хотите продолжить с текущим количеством (точность может снизиться на ~15%)."
-            )
-            return AWAITING_SOURCES
-
-    # Handle not accessible sources (T6 spec)
-    else:
-        message = verification.get('message', 'Источник недоступен')
-        is_private = verification.get('private', False)
-        post_count = verification.get('post_count', 0)
-
-        if is_private:
-            await update.message.reply_text(
-                f"🔒 У вас закрытый аккаунт ({message}).\n\n"
-                f"Откройте временно или прикрепите файл с ≥50 постами."
-            )
-        elif post_count > 0 and post_count < 50:
-            await update.message.reply_text(
-                f"⚠️ У аккаунта мало постов ({post_count} найдено, нужно ≥50).\n\n"
-                f"Добавьте другие соцсети или файл — иначе точность анализа снизится (~−15%)."
-            )
-        else:
-            await update.message.reply_text(
-                f"😔 Не удалось проверить источник: {message}\n\n"
-                f"Попробуйте другую ссылку."
-            )
+    if not result:
+        await update.message.reply_text(
+            "😔 Произошла ошибка при сохранении ссылки. Попробуйте ещё раз."
+        )
         return AWAITING_SOURCES
+
+    # T6.1: Save source_id for later async scraping
+    if 'added_sources' not in context.user_data:
+        context.user_data['added_sources'] = []
+
+    context.user_data['added_sources'].append(result['id'])
+    sources_count = len(context.user_data['added_sources'])
+
+    await update.message.reply_text(
+        f"✅ Аккаунт сохранён! ({sources_count} источников добавлено)\n\n"
+        f"Добавьте ещё ссылки или напишите 'готово' для начала сбора постов."
+    )
+
+    return AWAITING_SOURCES
 
 
 async def handle_brief_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle user's choice about briefing"""
+    """Handle user's choice about briefing (T6.1 compatible)"""
     choice = update.message.text
 
-    if choice == "Да, пройти сейчас":
+    # T6.1: New buttons from post-scraping offer
+    if choice in ["Да, пройти сейчас", "🔧 Пройти сейчас"]:
         # Start briefing
         message = (
             "Чтобы писать посты максимально точно под твои цели, ответь на пару вопросов 👇\n\n"
@@ -384,8 +398,25 @@ async def handle_brief_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(message, reply_markup=ReplyKeyboardRemove())
         return AWAITING_BRIEF_Q1_GOAL
 
-    elif choice == "Позже":
+    elif choice in ["Позже", "⏭️ Позже в настройках"]:
         # Skip briefing for now, go to main menu
+        # T6.1: Create brief with completion=0
+        try:
+            brief_result = await api_client.create_brief(
+                user_id=context.user_data['user_id'],
+                goal="",
+                audience="",
+                tone="",
+                topic="",
+                frequency="",
+                access_token=context.user_data['access_token'],
+                completion=0  # T6.1: Mark as not completed
+            )
+            if brief_result:
+                logger.info(f"Created placeholder brief with completion=0: {brief_result['id']}")
+        except Exception as e:
+            logger.error(f"Failed to create placeholder brief: {e}")
+
         context.user_data['brief_pending'] = True
         await update.message.reply_text(
             "Хорошо! Вы можете пройти брифинг позже из главного меню.\n\n"

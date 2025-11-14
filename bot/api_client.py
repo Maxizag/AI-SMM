@@ -104,52 +104,84 @@ class APIClient:
 
         return None
 
-    async def create_source_v2(
+    async def start_scraping_job(
         self,
-        platform: str,
-        url: str,
-        handle: str,
-        private: bool,
-        post_count_hint: int,
-        access_token: str
+        user_id: str,
+        source_ids: list,
+        access_token: str,
+        target_posts: int = 100,
+        min_posts: int = 50
     ) -> Optional[Dict[str, Any]]:
         """
-        Create a verified source (T6 spec)
+        Start asynchronous scraping job (T6 spec)
 
         Args:
-            platform: Platform name (telegram|vk|instagram)
-            url: Source URL
-            handle: Account handle/username
-            private: Whether account is private
-            post_count_hint: Estimated post count from verification
+            user_id: User UUID
+            source_ids: List of source UUIDs to scrape
             access_token: User's JWT token
+            target_posts: Target number of posts (default: 100)
+            min_posts: Minimum acceptable posts (default: 50)
 
         Returns:
-            Dict with source_id and status: "verified", or None if failed
+            Dict with job_id and status: "queued", or None if failed
         """
         try:
             api_url = f"{self.base_url}/sources/v2"
             headers = {"Authorization": f"Bearer {access_token}"}
             payload = {
-                "platform": platform,
-                "url": url,
-                "handle": handle,
-                "private": private,
-                "post_count_hint": post_count_hint
+                "user_id": user_id,
+                "source_ids": source_ids,
+                "target_posts": target_posts,
+                "min_posts": min_posts
             }
 
             response = await self.client.post(api_url, json=payload, headers=headers)
             response.raise_for_status()
 
             data = response.json()
-            logger.info(f"Source created via v2: source_id={data.get('source_id')}, status={data.get('status')}")
+            logger.info(f"Scraping job created: job_id={data.get('job_id')}, status={data.get('status')}")
             return data
 
         except httpx.HTTPError as e:
-            logger.error(f"Failed to create source v2: {e}")
+            logger.error(f"Failed to start scraping job: {e}")
             return None
         except Exception as e:
-            logger.error(f"Unexpected error creating source v2: {e}")
+            logger.error(f"Unexpected error starting scraping job: {e}")
+            return None
+
+    async def get_job_status(
+        self,
+        job_id: str,
+        access_token: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get scraping job status (T6 spec)
+
+        Args:
+            job_id: Job UUID
+            access_token: User's JWT token
+
+        Returns:
+            Dict with job_id, status, progress, errors, recommendations
+            or None if failed
+        """
+        try:
+            api_url = f"{self.base_url}/ingest/status"
+            headers = {"Authorization": f"Bearer {access_token}"}
+            params = {"job_id": job_id}
+
+            response = await self.client.get(api_url, params=params, headers=headers)
+            response.raise_for_status()
+
+            data = response.json()
+            logger.info(f"Job status fetched: job_id={job_id}, status={data.get('status')}")
+            return data
+
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to get job status: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error getting job status: {e}")
             return None
 
     async def start_scraping_job(

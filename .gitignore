@@ -56,3 +56,10 @@ docker-compose.override.yml
 htmlcov/
 .pytest_cache/
 .tox/
+
+# Telethon session files
+*.session
+*.session-journal
+
+# Downloaded media files
+media/

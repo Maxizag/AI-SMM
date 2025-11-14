@@ -150,6 +150,7 @@ class Brief(Base):
     tone: Mapped[str] = mapped_column(Text, nullable=True)
     topic: Mapped[str] = mapped_column(Text, nullable=True)
     frequency: Mapped[str] = mapped_column(Text, nullable=True)
+    completion: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # 0=не пройден, 1=пройден
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,

@@ -180,6 +180,8 @@ class InstagramScraper(BaseScraper):
                     "shares": 0
                 },
                 "link": f"https://www.instagram.com/p/ABC{i:04d}XYZ/",
+                # SECURITY: raw must NOT contain PII, tokens, or full post data
+                # Only store non-sensitive metadata needed for debugging
                 "raw": {}
             })
 

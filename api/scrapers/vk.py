@@ -136,6 +136,8 @@ class VKScraper(BaseScraper):
                     "shares": 5 + i
                 },
                 "link": f"https://vk.com/{self.handle}?w=wall-{5000 + i}",
+                # SECURITY: raw must NOT contain PII, tokens, or full post data
+                # Only store non-sensitive metadata needed for debugging
                 "raw": {}
             })
 
