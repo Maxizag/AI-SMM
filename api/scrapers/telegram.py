@@ -175,6 +175,7 @@ class TelegramScraper(BaseScraper):
         Returns:
             Clean handle without @ or https://
         """
+        original_url = url
         url = url.strip()
 
         # Remove https:// and http://
@@ -193,6 +194,8 @@ class TelegramScraper(BaseScraper):
 
         # Remove trailing slashes
         url = url.rstrip('/')
+
+        logger.info(f"Parsed handle: '{url}' from original URL: '{original_url}'")
 
         return url
 
@@ -247,9 +250,11 @@ class TelegramScraper(BaseScraper):
             Automatically retries up to 3 times on network errors
             Handles FloodWaitError with proper wait time
         """
+        logger.info(f"Starting Telegram verification for handle: '{self.handle}'")
         try:
             # Start client (will prompt for phone/code on first run)
             await self.client.start()
+            logger.info(f"Telethon client started successfully")
 
             # Try to get channel entity
             try:
@@ -304,6 +309,8 @@ class TelegramScraper(BaseScraper):
 
         except Exception as e:
             logger.error(f"Telegram verification error: {get_safe_error_code(e)}")
+            logger.error(f"Exception details: {type(e).__name__}: {str(e)}")
+            logger.error(f"Handle being verified: '{self.handle}'")
             return {
                 'status': 'ERROR',
                 'handle': f"@{self.handle}",
