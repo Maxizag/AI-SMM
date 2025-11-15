@@ -46,9 +46,7 @@ class Settings(BaseSettings):
         return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
 
     class Config:
-        # Look for .env in multiple locations (parent dir, current dir, or use env vars)
-        env_file = str(Path(__file__).parent.parent / ".env")
-        env_file_encoding = 'utf-8'
+        # env_file removed - variables are passed via docker-compose environment
         case_sensitive = False
         extra = 'ignore'  # Ignore extra fields in .env
 

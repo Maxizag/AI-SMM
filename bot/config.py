@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     env: str = "dev"
 
     class Config:
-        env_file = "../.env"
+        # env_file removed - variables are passed via docker-compose environment
         case_sensitive = False
 
 

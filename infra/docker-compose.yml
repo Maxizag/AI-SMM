@@ -76,6 +76,14 @@ services:
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - JWT_SECRET=${JWT_SECRET:-changeme}
+      - TELEGRAM_API_ID=${TELEGRAM_API_ID}
+      - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
+      - TELEGRAM_SESSION_NAME=${TELEGRAM_SESSION_NAME:-aismm_scraper}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_S3_BUCKET=${AWS_S3_BUCKET:-aismm-media}
+      - AWS_S3_REGION=${AWS_S3_REGION:-us-east-1}
       - ENV=${ENV:-dev}
     volumes:
       - ../api:/app
@@ -121,6 +129,13 @@ services:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TELEGRAM_API_ID=${TELEGRAM_API_ID}
+      - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
+      - TELEGRAM_SESSION_NAME=${TELEGRAM_SESSION_NAME:-aismm_scraper}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_S3_BUCKET=${AWS_S3_BUCKET:-aismm-media}
+      - AWS_S3_REGION=${AWS_S3_REGION:-us-east-1}
       - ENV=${ENV:-dev}
       - C_FORCE_ROOT=true
     volumes:
@@ -205,6 +220,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-devpass}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - API_BASE_URL=http://api:8000
       - ENV=${ENV:-dev}
     volumes:
       - ../bot:/app
