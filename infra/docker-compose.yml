@@ -89,7 +89,7 @@ services:
       - ../api:/app
       - ../migrations:/migrations
       - ..:/project_root
-      - ../aismm_scraper.session:/app/aismm_scraper.session:ro
+      - ../aismm_scraper.session:/project_root/aismm_scraper.session:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -142,7 +142,7 @@ services:
     volumes:
       - ../api:/app
       - ..:/project_root
-      - ../aismm_scraper.session:/app/aismm_scraper.session:ro
+      - ../aismm_scraper.session:/project_root/aismm_scraper.session:ro
     depends_on:
       postgres:
         condition: service_healthy
