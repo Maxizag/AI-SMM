@@ -93,6 +93,11 @@ async def verify_source(
     scraping_service = ScrapingService(db)
     result = await scraping_service.verify_source(normalized_url, platform=platform)
 
+    # Log the verification result for debugging
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Verification result for {url}: {result}")
+
     return SourceVerifyResponse(**result)
 
 
