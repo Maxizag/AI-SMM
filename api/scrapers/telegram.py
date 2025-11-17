@@ -252,9 +252,21 @@ class TelegramScraper(BaseScraper):
         """
         logger.info(f"Starting Telegram verification for handle: '{self.handle}'")
         try:
-            # Start client (will prompt for phone/code on first run)
-            await self.client.start()
-            logger.info(f"Telethon client started successfully")
+            # Connect to Telegram (without interactive prompts)
+            await self.client.connect()
+
+            # Check if session is authorized
+            if not await self.client.is_user_authorized():
+                logger.error("Telegram session is not authorized. Please create session file.")
+                return {
+                    'status': 'ERROR',
+                    'handle': f"@{self.handle}",
+                    'is_private': False,
+                    'posts_count': 0,
+                    'message': 'Telegram session not authorized. Please run create_telegram_session.py'
+                }
+
+            logger.info(f"Telethon client connected and authorized")
 
             # Try to get channel entity
             try:
