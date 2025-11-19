@@ -471,11 +471,14 @@ async def add_hints(
 
     for ref_source in references:
         try:
-            # Check if already exists
+            # Normalize URL for deduplication
+            normalized_url = normalize_url(ref_source.url)
+
+            # Check if already exists (by normalized URL)
             result = await db.execute(
                 select(Source)
                 .where(Source.user_id == user_id)
-                .where(Source.url == ref_source.url)
+                .where(Source.url == normalized_url)
             )
             existing = result.scalar_one_or_none()
 
@@ -491,7 +494,7 @@ async def add_hints(
             source = Source(
                 user_id=user_id,
                 platform=ref_source.platform,
-                url=ref_source.url,
+                url=normalized_url,  # Store normalized URL
                 status='new',
                 meta={
                     'is_reference': True,
@@ -526,6 +529,9 @@ async def create_source(
 
     Saves content source information (platform and URL) for a user.
     Used in onboarding flow when user provides their social media profiles.
+
+    Error (409):
+    - Returns 409 Conflict if source URL already exists for this user
     """
     # Verify user exists
     result = await db.execute(select(User).where(User.id == source_data.user_id))
@@ -537,7 +543,32 @@ async def create_source(
             detail=f"User with id {source_data.user_id} not found"
         )
 
-    source = Source(**source_data.model_dump())
+    # Normalize URL for deduplication
+    url_to_save = normalize_url(source_data.url)
+
+    # Check for duplicates by normalized URL
+    result = await db.execute(
+        select(Source)
+        .where(Source.user_id == source_data.user_id)
+        .where(Source.url == url_to_save)
+    )
+    existing_source = result.scalar_one_or_none()
+
+    if existing_source:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "duplicate_source",
+                "message": "Эта ссылка уже добавлена",
+                "existing_source_id": str(existing_source.id)
+            }
+        )
+
+    # Create source with normalized URL
+    source_dict = source_data.model_dump()
+    source_dict['url'] = url_to_save
+    source = Source(**source_dict)
+
     db.add(source)
     await db.commit()
     await db.refresh(source)
