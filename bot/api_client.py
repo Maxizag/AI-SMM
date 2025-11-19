@@ -300,6 +300,12 @@ class APIClient:
             logger.info(f"Source created (legacy): {data['id']}")
             return data
 
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 409:
+                logger.info(f"Source already exists: {url}")
+                return {"error": "duplicate", "message": "Источник уже добавлен"}
+            logger.error(f"Failed to create source: {e}")
+            return None
         except httpx.HTTPError as e:
             logger.error(f"Failed to create source: {e}")
             return None

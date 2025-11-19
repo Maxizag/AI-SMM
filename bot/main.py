@@ -363,6 +363,13 @@ async def handle_sources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return AWAITING_SOURCES
 
+    if result.get('error') == 'duplicate':
+        await update.message.reply_text(
+            "ℹ️ Этот источник уже добавлен ранее.\n\n"
+            "Добавьте другую ссылку или напишите 'готово'."
+        )
+        return AWAITING_SOURCES
+
     # T6.1: Save source_id for later async scraping
     if 'added_sources' not in context.user_data:
         context.user_data['added_sources'] = []
