@@ -1,6 +1,7 @@
 """Service for orchestrating content scraping"""
 
 import logging
+import traceback
 from typing import Dict, Any, Optional
 from uuid import UUID
 from datetime import datetime
@@ -207,8 +208,11 @@ class ScrapingService:
             }
 
         except Exception as e:
-            # Log only error type (security: no sensitive data in logs)
-            logger.error(f"Error during scraping: {get_safe_error_code(e)}")
+            # Log error with full traceback for debugging
+            logger.error(
+                f"Error during scraping: {get_safe_error_code(e)}\n"
+                f"Full traceback:\n{traceback.format_exc()}"
+            )
 
             # Update source status to 'error'
             if source:
@@ -255,6 +259,7 @@ class ScrapingService:
 
                 if existing_post:
                     # Post already exists, skip
+                    logger.debug(f"Post {post_data['platform_post_id']} already exists, skipping")
                     continue
 
                 # Create new post
@@ -280,15 +285,26 @@ class ScrapingService:
                 try:
                     await self.db.commit()
                     saved_count += 1
+                    logger.debug(f"Successfully saved post {post_data['platform_post_id']}")
                 except Exception as commit_error:
                     # Rollback failed transaction and continue with next post
                     await self.db.rollback()
-                    logger.error(f"Error committing post {post_data.get('platform_post_id')}: {get_safe_error_code(commit_error)}")
+                    logger.error(
+                        f"Error committing post {post_data.get('platform_post_id')}: "
+                        f"{get_safe_error_code(commit_error)}\n"
+                        f"Full traceback:\n{traceback.format_exc()}\n"
+                        f"Post data keys: {list(post_data.keys())}"
+                    )
                     continue
 
             except Exception as e:
-                # Log only error type (security: no post content in logs)
-                logger.error(f"Error saving post {post_data.get('platform_post_id')}: {get_safe_error_code(e)}")
+                # Log error with full traceback for debugging
+                logger.error(
+                    f"Error saving post {post_data.get('platform_post_id')}: "
+                    f"{get_safe_error_code(e)}\n"
+                    f"Full traceback:\n{traceback.format_exc()}\n"
+                    f"Post data keys: {list(post_data.keys())}"
+                )
                 continue
 
         return saved_count
