@@ -375,7 +375,7 @@ class TelegramScraper(BaseScraper):
                 post = {
                     "platform_post_id": str(msg.id),
                     "author_handle": f"@{self.handle}",
-                    "posted_at": msg.date,
+                    "posted_at": msg.date.replace(tzinfo=None) if msg.date else None,
                     "text": msg.message or "",
                     "media": media_list,
                     "reactions": {
