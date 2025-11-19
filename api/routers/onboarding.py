@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from uuid import UUID
 from typing import List, Optional
 from datetime import datetime
@@ -158,13 +159,35 @@ async def create_source_v2(
     )
 
     db.add(source)
-    await db.commit()
-    await db.refresh(source)
 
-    return SourceCreateV2Response(
-        source_id=source.id,
-        status="verified"
-    )
+    try:
+        await db.commit()
+        await db.refresh(source)
+
+        return SourceCreateV2Response(
+            source_id=source.id,
+            status="verified"
+        )
+    except IntegrityError:
+        # Race condition: source was created between our check and commit
+        await db.rollback()
+
+        # Fetch the existing source
+        result = await db.execute(
+            select(Source)
+            .where(Source.user_id == current_user_id)
+            .where(Source.url == normalized_url)
+        )
+        existing_source = result.scalar_one_or_none()
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "duplicate_source",
+                "message": "Эта ссылка уже добавлена",
+                "existing_source_id": str(existing_source.id) if existing_source else None
+            }
+        )
 
 
 # Ingest/scrape endpoint (T6 spec - async with Celery)
@@ -570,9 +593,31 @@ async def create_source(
     source = Source(**source_dict)
 
     db.add(source)
-    await db.commit()
-    await db.refresh(source)
-    return source
+
+    try:
+        await db.commit()
+        await db.refresh(source)
+        return source
+    except IntegrityError:
+        # Race condition: source was created between our check and commit
+        await db.rollback()
+
+        # Fetch the existing source
+        result = await db.execute(
+            select(Source)
+            .where(Source.user_id == source_data.user_id)
+            .where(Source.url == url_to_save)
+        )
+        existing_source = result.scalar_one_or_none()
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "duplicate_source",
+                "message": "Эта ссылка уже добавлена",
+                "existing_source_id": str(existing_source.id) if existing_source else None
+            }
+        )
 
 
 @router.get("/sources/{source_id}", response_model=SourceResponse)

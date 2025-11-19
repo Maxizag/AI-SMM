@@ -220,6 +220,7 @@ async def _execute_scraping_job(job_id: str, user_id: str, source_ids: Optional[
             all_errors = []
             private_sources_count = 0
             failed_sources_count = 0
+            all_posts_collected = True  # Track if we collected all available posts
 
             # Process each source
             for source in sources:
@@ -318,6 +319,11 @@ async def _execute_scraping_job(job_id: str, user_id: str, source_ids: Optional[
                         logger.warning(f"No posts scraped from {source.id}")
                         failed_sources_count += 1
 
+                    # Check if there might be more posts available
+                    # If we got as many posts as we requested, there might be more
+                    if len(scraped_posts) >= limit:
+                        all_posts_collected = False
+
                     # Save posts to database
                     saved_count = await _save_posts(db, scraped_posts, source, user_uuid)
 
@@ -413,15 +419,29 @@ async def _execute_scraping_job(job_id: str, user_id: str, source_ids: Optional[
                     ))
 
             else:
-                # Below minimum
-                final_status = 'error'
-                all_errors.append(create_error_object(
-                    ScrapingErrorCode.JOB_INSUFFICIENT_POSTS,
-                    total_collected=total_collected,
-                    min_required=min_posts,
-                    target=target_posts
-                ))
-                logger.error(f"Job {job_id} failed: {total_collected}/{min_posts} minimum")
+                # Below minimum - but check if we collected all available posts
+                if all_posts_collected:
+                    # We collected ALL available posts, even if < min_posts - this is success
+                    final_status = 'partial'
+                    logger.warning(f"Job {job_id} partial: {total_collected} posts (all available)")
+
+                    # Add warning about low content
+                    if total_collected < 50:
+                        all_errors.append(create_error_object(
+                            ScrapingErrorCode.JOB_INSUFFICIENT_POSTS,
+                            total_collected=total_collected,
+                            min_required=50
+                        ))
+                else:
+                    # Not all posts collected - there are more available but we failed to get them
+                    final_status = 'error'
+                    all_errors.append(create_error_object(
+                        ScrapingErrorCode.JOB_INSUFFICIENT_POSTS,
+                        total_collected=total_collected,
+                        min_required=min_posts,
+                        target=target_posts
+                    ))
+                    logger.error(f"Job {job_id} failed: {total_collected}/{min_posts} minimum")
 
             # Generate recommendations based on total_collected (business rules)
             recommendations = []
