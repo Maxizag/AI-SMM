@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import os
-from telethon.sessions import StringSession
 import tempfile
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Callable
@@ -198,20 +197,44 @@ class TelegramScraper(BaseScraper):
         return url
 
     def _init_client(self):
-        """Initialize Telethon client with StringSession from env"""
+        """
+        Initialize Telethon client with credentials from settings
+
+        Raises:
+            ValueError: If API credentials are not configured
+        """
         if not settings.telegram_api_id or not settings.telegram_api_hash:
             raise ValueError(
                 "Telegram API credentials not configured. "
                 "Please set TELEGRAM_API_ID and TELEGRAM_API_HASH in .env"
             )
 
-        session_string = os.getenv('TELEGRAM_STRING_SESSION', '')
+        # Try to find session file in multiple locations
+        # 1. Current directory (for local development)
+        # 2. /project_root (Docker mount point)
+        # 3. Parent directory (fallback)
+        session_name = settings.telegram_session_name
+
+        possible_paths = [
+            session_name,  # Current dir
+            f"/project_root/{session_name}",  # Docker mount
+            f"../{session_name}",  # Parent dir
+        ]
+
+        # Use the first path where session file exists, or default to current dir
+        session_path = session_name
+        for path in possible_paths:
+            if os.path.exists(f"{path}.session"):
+                session_path = path
+                logger.info(f"Found session file at: {path}.session")
+                break
+
         self.client = TelegramClient(
-            StringSession(session_string),
+            session_path,
             settings.telegram_api_id,
             settings.telegram_api_hash
         )
-    
+
     @retry_on_error(max_attempts=3, delay=2.0)
     async def verify(self) -> Dict[str, Any]:
         """
@@ -226,7 +249,7 @@ class TelegramScraper(BaseScraper):
         """
         try:
             # Start client (will prompt for phone/code on first run)
-            await self.client.connect()
+            await self.client.start()
 
             # Try to get channel entity
             try:

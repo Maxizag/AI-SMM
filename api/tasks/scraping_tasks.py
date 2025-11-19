@@ -518,8 +518,10 @@ async def _save_posts(
 
         except Exception as e:
             # Log only error type (security: no post content in logs)
+            import traceback
             logger.error(f"Error saving post {post_data.get('platform_post_id')}: {get_safe_error_code(e)}")
-            continue
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            logger.error(f"Exception type: {type(e).__name__}, details: {str(e)}")
 
     # Commit all posts at once
     await db.commit()

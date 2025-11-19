@@ -208,7 +208,10 @@ class ScrapingService:
 
         except Exception as e:
             # Log only error type (security: no sensitive data in logs)
-            logger.error(f"Error during scraping: {get_safe_error_code(e)}")
+            import traceback
+            logger.error(f"Error saving post {post_data.get('platform_post_id')}: {get_safe_error_code(e)}")
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            logger.error(f"Exception type: {type(e).__name__}, details: {str(e)}")
 
             # Update source status to 'error'
             if source:

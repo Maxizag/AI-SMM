@@ -81,8 +81,6 @@ services:
       - ../api:/app
       - ../migrations:/migrations
       - ..:/project_root
-    
-
     depends_on:
       postgres:
         condition: service_healthy
